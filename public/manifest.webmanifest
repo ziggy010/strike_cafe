@@ -1,0 +1,23 @@
+{
+  "name": "Strike Yard",
+  "short_name": "Strike Yard",
+  "description": "Order from your table at Strike Yard café",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f4ec",
+  "theme_color": "#2d4a38",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

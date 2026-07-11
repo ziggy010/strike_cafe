@@ -1,26 +1,195 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@theme {
+  /* Brand — Strike Yard: deep green anchor + vivid grass-green accent */
+  --color-pitch: oklch(0.34 0.085 148);
+  --color-pitch-deep: oklch(0.27 0.07 148);
+  --color-pitch-bright: oklch(0.63 0.185 146);
+  --color-pitch-soft: oklch(0.93 0.045 146);
+  --color-cream: oklch(0.97 0.008 95);
+  --color-surface: oklch(0.995 0.004 95);
+  --color-ink: oklch(0.24 0.02 155);
+  --color-ink-soft: oklch(0.48 0.02 150);
+  --color-ink-faint: oklch(0.62 0.015 145);
+  --color-terracotta: oklch(0.58 0.14 40);
+  --color-terracotta-soft: oklch(0.95 0.025 45);
+  --color-saffron: oklch(0.78 0.13 75);
+  --color-saffron-deep: oklch(0.6 0.13 70);
+  --color-saffron-soft: oklch(0.96 0.04 85);
+  --color-line: oklch(0.9 0.012 120);
+  --color-line-soft: oklch(0.93 0.01 115);
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  /* Kitchen display (dark) */
+  --color-kds-bg: oklch(0.17 0.015 155);
+  --color-kds-surface: oklch(0.22 0.02 155);
+  --color-kds-raised: oklch(0.27 0.022 155);
+  --color-kds-line: oklch(0.34 0.02 155);
+  --color-kds-text: oklch(0.95 0.008 95);
+  --color-kds-dim: oklch(0.7 0.015 130);
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  --font-display: var(--font-fraunces), var(--font-mukta), serif;
+  --font-body: var(--font-karla), var(--font-mukta), system-ui, sans-serif;
+
+  --radius-ctl: 10px;
+  --radius-card: 16px;
+
+  --shadow-lift: 0 1px 2px oklch(0.24 0.02 155 / 0.05), 0 4px 16px oklch(0.24 0.02 155 / 0.07);
+  --shadow-sheet: 0 -8px 32px oklch(0.24 0.02 155 / 0.16);
+
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-smooth: cubic-bezier(0.16, 1, 0.3, 1);
+
+  --animate-slide-up: slide-up 0.34s var(--ease-smooth);
+  --animate-pop-in: pop-in 0.24s var(--ease-smooth);
+  --animate-soft-pulse: soft-pulse 0.7s var(--ease-smooth);
+  --animate-ticket-in: ticket-in 0.32s var(--ease-smooth);
+  --animate-fade-in: fade-in 0.26s ease-out;
+
+  @keyframes slide-up {
+    from { transform: translateY(36px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+  @keyframes sheet-out {
+    from { transform: translateY(0); opacity: 1; }
+    to { transform: translateY(28px); opacity: 0; }
+  }
+  @keyframes ticket-in {
+    from { transform: translateY(-12px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes fade-out {
+    from { opacity: 1; }
+    to { opacity: 0; }
+  }
+  @keyframes pop-in {
+    from { transform: scale(0.97); opacity: 0.65; }
+    to { transform: scale(1); opacity: 1; }
+  }
+  @keyframes soft-pulse {
+    0%, 100% { transform: scale(1); }
+    45% { transform: scale(1.018); }
   }
 }
 
+html {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-cream);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 18% 0%, oklch(0.9 0.08 146 / 0.38), transparent 28rem),
+    linear-gradient(145deg, oklch(0.97 0.008 95), oklch(0.94 0.028 126));
+}
+
+h1, h2, h3, .font-display {
+  font-family: var(--font-display);
+  font-variation-settings: "opsz" 40;
+  letter-spacing: -0.01em;
+}
+
+.price, .tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+button, [role="button"], a, label, select {
+  cursor: pointer;
+}
+
+button, a {
+  transition-timing-function: var(--ease-smooth);
+}
+
+.pressable {
+  transition:
+    transform 240ms var(--ease-smooth),
+    box-shadow 260ms var(--ease-smooth),
+    border-color 240ms var(--ease-smooth),
+    background-color 240ms var(--ease-smooth),
+    color 240ms var(--ease-smooth),
+    opacity 240ms var(--ease-smooth);
+}
+
+.pressable:active {
+  transform: scale(0.988);
+}
+
+.tap-bloom {
+  position: relative;
+  overflow: hidden;
+}
+
+.tap-bloom::after {
+  content: "";
+  position: absolute;
+  inset: auto 12% -40% 12%;
+  height: 60%;
+  border-radius: 999px;
+  background: oklch(0.995 0.004 95 / 0.18);
+  opacity: 0;
+  transform: translateY(10px) scale(0.92);
+  transition:
+    opacity 240ms var(--ease-smooth),
+    transform 260ms var(--ease-smooth);
+}
+
+.tap-bloom:active::after {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.sheet-scrim-in {
+  animation: fade-in 0.28s ease-out both;
+}
+
+.sheet-scrim-out {
+  animation: fade-out 0.22s ease-out both;
+}
+
+.sheet-panel-in {
+  animation: slide-up 0.38s var(--ease-smooth) both;
+}
+
+.sheet-panel-out {
+  animation: sheet-out 0.24s ease-in both;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-pitch-bright);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--color-pitch-soft);
+}
+
+/* Scrollbar-free horizontal chip rails */
+.rail {
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.rail::-webkit-scrollbar { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

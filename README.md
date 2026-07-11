@@ -1,36 +1,50 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Strike Yard — QR Table Ordering
 
-## Getting Started
+QR-based ordering system for the Strike Yard café (futsal + pickleball complex, Nepal).
+Customers scan a table QR → browse a bilingual menu → order → track status. Staff manage
+orders, the kitchen display, menu, tables, reports, inventory, and settings.
 
-First, run the development server:
+## Run it
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- **Customer app** — pick a demo table on the home page (in production the table QR
+  deep-links to `/t/<table>` directly). Language toggle EN/ने in the header.
+- **Staff panel** — `/staff`. Demo PINs: Owner `1234`, Kitchen `2222`, Waiter `3333`.
+- **Billing counter** — `/staff/billing` (detailed bills, cash/QR payment marking).
+- **Kitchen display** — `/staff/kitchen` (dark, large type; run fullscreen on a tablet).
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Open a customer tab and a staff tab side by side: orders, status changes, and waiter
+calls sync live between tabs.
 
-## Learn More
+## How it works
 
-To learn more about Next.js, take a look at the following resources:
+- **Demo mode (current)**: all data lives in `localStorage`, synced across tabs with
+  `BroadcastChannel`. Perfect for evaluating the product and running on a single device.
+  Reset anytime from Settings → "Reset demo data".
+- **Production (go-live)**: swap the store for Supabase. The schema with RLS policies is
+  ready in [supabase/schema.sql](supabase/schema.sql); every screen reads/writes through
+  the single interface in [src/lib/store.ts](src/lib/store.ts). See [SETUP.md](SETUP.md).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Feature map
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| Area | Where |
+|---|---|
+| Menu, cart, notes, order tracker, waiter call, feedback | `src/components/customer/` |
+| Orders dashboard, status flow, cancel, waiter-call alerts | `src/app/staff/page.tsx` |
+| Billing counter, detailed bill, payment collection | `src/app/staff/billing/page.tsx` |
+| Kitchen display (rounds, timers, urgency) | `src/app/staff/kitchen/page.tsx` |
+| Menu CRUD, stock, photos, specials, time windows | `src/app/staff/menu/page.tsx` |
+| Tables + QR generate/download/print | `src/app/staff/tables/page.tsx` |
+| Sales, best sellers, peak hours, staff perf, CSV | `src/app/staff/reports/page.tsx` |
+| Inventory counts, low-stock alerts, adjustment log | `src/app/staff/inventory/page.tsx` |
+| Café profile, VAT/service, sound, staff PINs | `src/app/staff/settings/page.tsx` |
+| Types / seed / store / i18n | `src/lib/` |
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Payments v1 is cash / counter-QR with staff marking orders paid. eSewa/Khalti API
+integration is a planned phase 2 (see SETUP.md).
