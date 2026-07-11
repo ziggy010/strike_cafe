@@ -8,19 +8,20 @@ import { OrderTracker } from "./OrderTracker";
 import { DietMark, SpiceLevel, StockBadge } from "@/components/ui";
 import { getStore } from "@/lib/store";
 import { useDB, useHydrated, useStoredString, writeStoredString } from "@/lib/useStore";
+import { assetPath } from "@/lib/assets";
 import { loc, useLang } from "@/lib/i18n";
 import { inWindow, npr } from "@/lib/format";
 import type { MenuItem } from "@/lib/types";
 import { isOpen } from "@/lib/types";
 
 const orderKey = (tableId: string) => `strike-yard-order-${tableId}`;
-const heroPhoto = "/food/burger.jpg";
+const heroPhoto = assetPath("/food/burger.jpg");
 const CATEGORY_META: Record<string, { photo: string; tone: string; kicker: string }> = {
-  "cat-coffee": { photo: "/food/latte.jpg", tone: "bg-pitch", kicker: "Fresh pulls" },
-  "cat-cold": { photo: "/food/lemonade.jpg", tone: "bg-pitch-bright", kicker: "Post-game chill" },
-  "cat-snacks": { photo: "/food/momo.jpg", tone: "bg-saffron-deep", kicker: "Fast bites" },
-  "cat-meals": { photo: "/food/dalbhat.jpg", tone: "bg-terracotta", kicker: "Full plates" },
-  "cat-breakfast": { photo: "/food/pancakes.jpg", tone: "bg-saffron", kicker: "Morning only" },
+  "cat-coffee": { photo: assetPath("/food/latte.jpg"), tone: "bg-pitch", kicker: "Fresh pulls" },
+  "cat-cold": { photo: assetPath("/food/lemonade.jpg"), tone: "bg-pitch-bright", kicker: "Post-game chill" },
+  "cat-snacks": { photo: assetPath("/food/momo.jpg"), tone: "bg-saffron-deep", kicker: "Fast bites" },
+  "cat-meals": { photo: assetPath("/food/dalbhat.jpg"), tone: "bg-terracotta", kicker: "Full plates" },
+  "cat-breakfast": { photo: assetPath("/food/pancakes.jpg"), tone: "bg-saffron", kicker: "Morning only" },
 };
 
 export default function MenuApp({ tableId }: { tableId: string }) {
@@ -215,7 +216,7 @@ export default function MenuApp({ tableId }: { tableId: string }) {
             onClick={() => setActiveCat("all")}
             label={t("all")}
             kicker={lang === "ne" ? "सबै आइटम" : "Everything"}
-            photo="/food/burger.jpg"
+            photo={assetPath("/food/burger.jpg")}
             tone="bg-pitch"
             count={db.items.length}
           />

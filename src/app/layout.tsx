@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Fraunces, Karla, Mukta } from "next/font/google";
+import { assetPath } from "@/lib/assets";
 import "./globals.css";
 
 const fraunces = Fraunces({
@@ -23,7 +24,7 @@ const mukta = Mukta({
 export const metadata: Metadata = {
   title: "Strike Yard",
   description: "Order from your table — Strike Yard café",
-  manifest: "/manifest.webmanifest",
+  manifest: assetPath("/manifest.webmanifest"),
   appleWebApp: {
     capable: true,
     title: "Strike Yard",

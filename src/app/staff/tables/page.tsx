@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { Download, Plus, Printer, Trash2 } from "lucide-react";
 import { getStore } from "@/lib/store";
+import { BASE_PATH } from "@/lib/assets";
 import { useDB } from "@/lib/useStore";
 import { isOpen } from "@/lib/types";
 
@@ -18,7 +19,7 @@ export default function TablesPage() {
     (async () => {
       const next: Record<string, string> = {};
       for (const t of db.tables) {
-        next[t.id] = await QRCode.toDataURL(`${window.location.origin}/t/${t.id}`, {
+        next[t.id] = await QRCode.toDataURL(`${window.location.origin}${BASE_PATH}/t/${t.id}/`, {
           width: 480,
           margin: 2,
           color: { dark: "#1f3328", light: "#ffffff" },
@@ -130,7 +131,7 @@ export default function TablesPage() {
       </div>
 
       <p className="mt-6 text-sm text-ink-faint print:hidden">
-        QR codes point to {origin || "this site"}/t/&lt;table&gt;. They keep working after menu changes; regenerate
+        QR codes point to this site/t/&lt;table&gt;. They keep working after menu changes; regenerate
         only if you move to a new domain.
       </p>
     </div>
