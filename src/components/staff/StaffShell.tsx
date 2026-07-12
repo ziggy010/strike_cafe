@@ -62,9 +62,16 @@ export default function StaffShell({ children }: { children: React.ReactNode }) 
   const openCount = db.orders.filter((o) => o.status === "received").length;
   const prevCount = useRef(openCount);
   useEffect(() => {
-    if (user && db.settings.soundOn && openCount > prevCount.current) beep();
+    if (user && db.settings.soundOn && openCount > prevCount.current) orderChime();
     prevCount.current = openCount;
   }, [openCount, user, db.settings.soundOn]);
+
+  const pendingCalls = db.calls.filter((c) => !c.resolvedAt).length;
+  const prevCallCount = useRef(pendingCalls);
+  useEffect(() => {
+    if (user && db.settings.soundOn && pendingCalls > prevCallCount.current) waiterCallChime();
+    prevCallCount.current = pendingCalls;
+  }, [pendingCalls, user, db.settings.soundOn]);
 
   if (!hydrated) {
     return <div className="flex min-h-dvh items-center justify-center text-ink-faint">Loading…</div>;
@@ -84,8 +91,6 @@ export default function StaffShell({ children }: { children: React.ReactNode }) 
 
   const nav = NAV.filter((n) => n.roles.includes(user.role));
   const isKDS = pathname === "/staff/kitchen" && user.role === "kitchen";
-  const pendingCalls = db.calls.filter((c) => !c.resolvedAt).length;
-
   // Kitchen display runs full-bleed without the shell chrome
   if (isKDS) {
     return <StaffContext.Provider value={user}>{children}</StaffContext.Provider>;
@@ -244,21 +249,30 @@ function Login({ onLogin }: { onLogin: (u: StaffUser) => void }) {
 }
 
 /** Two-tone order chime via WebAudio; no asset download needed. */
-function beep(): void {
+function orderChime(): void {
+  playChime([880, 1174.66], 0.18, 0.25);
+}
+
+/** Warmer triple-ping so waiter calls feel distinct from kitchen orders. */
+function waiterCallChime(): void {
+  playChime([659.25, 830.61, 659.25], 0.14, 0.22);
+}
+
+function playChime(frequencies: number[], gap: number, volume: number): void {
   try {
     const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     const ctx = new Ctx();
-    [880, 1174.66].forEach((freq, i) => {
+    frequencies.forEach((freq, i) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = "sine";
-      osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0.0001, ctx.currentTime + i * 0.18);
-      gain.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + i * 0.18 + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + i * 0.18 + 0.17);
+      osc.frequency.setValueAtTime(freq, ctx.currentTime + i * gap);
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime + i * gap);
+      gain.gain.exponentialRampToValueAtTime(volume, ctx.currentTime + i * gap + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + i * gap + 0.13);
       osc.connect(gain).connect(ctx.destination);
-      osc.start(ctx.currentTime + i * 0.18);
-      osc.stop(ctx.currentTime + i * 0.18 + 0.2);
+      osc.start(ctx.currentTime + i * gap);
+      osc.stop(ctx.currentTime + i * gap + 0.16);
     });
   } catch {
     // audio blocked until first user gesture — fine, the visual badge still updates
