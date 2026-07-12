@@ -22,7 +22,8 @@ Demo mode's limitation: each device has its own data. For real service (customer
 
 1. Create a project at [supabase.com](https://supabase.com) (free tier is enough).
 2. SQL Editor → paste and run `supabase/schema.sql`.
-3. Project Settings → API → copy the URL and anon key into `.env.local` for local testing:
+3. Project Settings → API → copy the project URL and anon/publishable key into `.env.local` for local testing.
+   The URL should look like `https://your-project-ref.supabase.co`, not the longer `/rest/v1` Data API URL.
    ```
    NEXT_PUBLIC_SUPABASE_URL=...
    NEXT_PUBLIC_SUPABASE_ANON_KEY=...

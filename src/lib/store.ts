@@ -40,6 +40,10 @@ function startOfToday(): number {
   return d.getTime();
 }
 
+function normalizeSupabaseUrl(url: string): string {
+  return url.trim().replace(/\/rest\/v1\/?$/, "").replace(/\/+$/, "");
+}
+
 /**
  * Browser data store.
  *
@@ -113,7 +117,7 @@ class Store {
 
   private createSupabaseClient(): SupabaseClient | null {
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
-    return createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    return createClient(normalizeSupabaseUrl(SUPABASE_URL), SUPABASE_ANON_KEY.trim(), {
       auth: { persistSession: false, autoRefreshToken: false },
     });
   }
