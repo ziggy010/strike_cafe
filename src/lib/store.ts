@@ -94,6 +94,17 @@ class Store {
   }
 
   private withMigrations(db: DB): DB {
+    const seed = seedDB();
+    if (!db.categories?.length) db.categories = seed.categories;
+    if (!db.items?.length) db.items = seed.items;
+    if (!db.tables?.length) db.tables = seed.tables;
+    if (!db.staff?.length) db.staff = seed.staff;
+    if (!db.inventory?.length) db.inventory = seed.inventory;
+    if (!db.settings) db.settings = seed.settings;
+    if (!Array.isArray(db.orders)) db.orders = [];
+    if (!Array.isArray(db.calls)) db.calls = [];
+    if (!Array.isArray(db.inventoryLogs)) db.inventoryLogs = [];
+
     if (!db.staff.some((u) => u.id === "u-counter")) {
       db.staff.push({ id: "u-counter", name: "Counter", role: "counter", pin: "4444" });
     }
