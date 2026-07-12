@@ -22,21 +22,21 @@ Demo mode's limitation: each device has its own data. For real service (customer
 
 1. Create a project at [supabase.com](https://supabase.com) (free tier is enough).
 2. SQL Editor → paste and run `supabase/schema.sql`.
-3. Database → Replication → enable Realtime for `orders`, `order_lines`, `waiter_calls`.
-4. Storage → create a public bucket `menu-photos`.
-5. Authentication → add staff emails; insert matching rows in the `staff` table with roles.
-6. Project Settings → API → copy the URL and anon key into `.env.local`:
+3. Project Settings → API → copy the URL and anon key into `.env.local` for local testing:
    ```
    NEXT_PUBLIC_SUPABASE_URL=...
    NEXT_PUBLIC_SUPABASE_ANON_KEY=...
    ```
-7. **Adapter step (development task):** implement the Supabase adapter behind the store
-   interface in `src/lib/store.ts`. Every screen already talks to that one class — the
-   swap touches no UI code. The schema mirrors `src/lib/types.ts` one-to-one.
-   `@supabase/supabase-js` is already installed.
+4. For GitHub Pages, add the same values in GitHub → repo → Settings → Secrets and
+   variables → Actions:
+   ```
+   NEXT_PUBLIC_SUPABASE_URL
+   NEXT_PUBLIC_SUPABASE_ANON_KEY
+   ```
+5. Re-run the "Deploy to GitHub Pages" workflow, or push a new commit.
 
-This step is deliberately left for when real credentials exist, so it can be built and
-tested against the live project instead of shipped blind.
+The app uses Supabase Realtime through the `app_state` table. If the env vars are missing,
+it automatically falls back to demo mode, which only syncs tabs on the same device.
 
 ## 3. Print table QR codes
 

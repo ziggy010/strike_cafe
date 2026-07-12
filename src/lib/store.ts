@@ -1,5 +1,6 @@
 "use client";
 
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type {
   DB,
   Diet,
@@ -18,6 +19,15 @@ import { seedDB } from "./seed";
 
 const LS_KEY = "strike-yard-db-v1";
 const CHANNEL = "strike-yard-sync";
+const CLOUD_STATE_ID = "main";
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+type AppStateRow = {
+  id: string;
+  data: DB;
+  updated_at?: string;
+};
 
 function uid(): string {
   if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
@@ -31,18 +41,27 @@ function startOfToday(): number {
 }
 
 /**
- * Demo-mode data store: localStorage persistence + BroadcastChannel realtime.
- * Production swaps this for the Supabase adapter (see supabase/schema.sql and
- * SETUP.md) — every consumer goes through this interface, nothing else changes.
+ * Browser data store.
+ *
+ * Without Supabase env vars, this is demo-mode localStorage + BroadcastChannel.
+ * With Supabase env vars, the whole DB is synced through one shared Realtime row
+ * so customer phones, kitchen, and owner/counter screens see the same orders.
  */
 class Store {
   private db: DB;
   private listeners = new Set<() => void>();
   private bc: BroadcastChannel | null = null;
+  private supabase: SupabaseClient | null = null;
+  private cloudSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  private loadingCloud = false;
 
   constructor() {
     this.db = this.load();
     if (typeof window !== "undefined") {
+      this.supabase = this.createSupabaseClient();
+      void this.loadCloudSnapshot();
+      this.subscribeToCloudChanges();
+
       if ("BroadcastChannel" in window) {
         this.bc = new BroadcastChannel(CHANNEL);
         this.bc.onmessage = () => {
@@ -81,13 +100,95 @@ class Store {
     return db;
   }
 
+  private createSupabaseClient(): SupabaseClient | null {
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
+    return createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+  }
+
+  private persistLocal(db: DB): void {
+    try {
+      window.localStorage.setItem(LS_KEY, JSON.stringify(db));
+    } catch {}
+  }
+
+  private async loadCloudSnapshot(): Promise<void> {
+    if (!this.supabase || this.loadingCloud) return;
+    this.loadingCloud = true;
+
+    const { data, error } = await this.supabase
+      .from("app_state")
+      .select("data")
+      .eq("id", CLOUD_STATE_ID)
+      .maybeSingle<AppStateRow>();
+
+    this.loadingCloud = false;
+    if (error) {
+      console.warn("Strike Yard cloud sync is unavailable; using this device only.", error.message);
+      return;
+    }
+
+    if (data?.data) {
+      this.db = this.withMigrations(data.data);
+      this.persistLocal(this.db);
+      this.emit();
+      return;
+    }
+
+    await this.saveCloudSnapshot(this.db);
+  }
+
+  private subscribeToCloudChanges(): void {
+    if (!this.supabase) return;
+
+    this.supabase
+      .channel("strike-yard-app-state")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "app_state",
+          filter: `id=eq.${CLOUD_STATE_ID}`,
+        },
+        (payload) => {
+          const row = payload.new as AppStateRow | null;
+          if (!row?.data) return;
+          this.db = this.withMigrations(row.data);
+          this.persistLocal(this.db);
+          this.emit();
+        },
+      )
+      .subscribe();
+  }
+
+  private queueCloudSave(db: DB): void {
+    if (!this.supabase) return;
+    if (this.cloudSaveTimer) clearTimeout(this.cloudSaveTimer);
+    this.cloudSaveTimer = setTimeout(() => {
+      void this.saveCloudSnapshot(db);
+    }, 120);
+  }
+
+  private async saveCloudSnapshot(db: DB): Promise<void> {
+    if (!this.supabase) return;
+    const { error } = await this.supabase.from("app_state").upsert({
+      id: CLOUD_STATE_ID,
+      data: db,
+      updated_at: new Date().toISOString(),
+    });
+    if (error) {
+      console.warn("Strike Yard cloud sync save failed; changes remain on this device.", error.message);
+    }
+  }
+
   private mutate(fn: (db: DB) => void): void {
     const next = structuredClone(this.db);
     fn(next);
     this.db = next;
-    try {
-      window.localStorage.setItem(LS_KEY, JSON.stringify(next));
-    } catch {}
+    this.persistLocal(next);
+    this.queueCloudSave(next);
     this.bc?.postMessage("update");
     this.emit();
   }
