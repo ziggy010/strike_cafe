@@ -67,6 +67,8 @@ export interface WaiterCall {
   id: string;
   tableId: string;
   createdAt: number;
+  acceptedAt: number | null;
+  acceptedBy: string | null;
   resolvedAt: number | null;
   resolvedBy: string | null;
 }

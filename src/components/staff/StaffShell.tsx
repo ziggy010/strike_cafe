@@ -67,11 +67,18 @@ export default function StaffShell({ children }: { children: React.ReactNode }) 
   }, [openCount, user, db.settings.soundOn]);
 
   const pendingCalls = db.calls.filter((c) => !c.resolvedAt).length;
-  const prevCallCount = useRef(pendingCalls);
+  const unacceptedCalls = db.calls.filter((c) => !c.resolvedAt && !c.acceptedAt).length;
+  const prevCallCount = useRef(unacceptedCalls);
   useEffect(() => {
-    if (user && db.settings.soundOn && pendingCalls > prevCallCount.current) waiterCallChime();
-    prevCallCount.current = pendingCalls;
-  }, [pendingCalls, user, db.settings.soundOn]);
+    if (user && db.settings.soundOn && unacceptedCalls > prevCallCount.current) waiterCallChime();
+    prevCallCount.current = unacceptedCalls;
+  }, [unacceptedCalls, user, db.settings.soundOn]);
+
+  useEffect(() => {
+    if (!user || !db.settings.soundOn || unacceptedCalls === 0) return;
+    const interval = window.setInterval(waiterCallChime, 30000);
+    return () => window.clearInterval(interval);
+  }, [unacceptedCalls, user, db.settings.soundOn]);
 
   if (!hydrated) {
     return <div className="flex min-h-dvh items-center justify-center text-ink-faint">Loading…</div>;

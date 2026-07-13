@@ -69,6 +69,7 @@ const dict = {
   statusServed: { en: "Served", ne: "पुर्‍याइयो" },
   statusCancelled: { en: "Cancelled", ne: "रद्द भयो" },
   callWaiter: { en: "Call waiter", ne: "वेटर बोलाउनुहोस्" },
+  waiterCalling: { en: "Calling staff", ne: "स्टाफ बोलाइँदैछ" },
   waiterComing: { en: "Waiter is on the way", ne: "वेटर आउँदै हुनुहुन्छ" },
   payAtCounter: { en: "Pay by cash or scan the counter QR when you're done.", ne: "खाइसकेपछि नगद वा काउन्टर QR बाट तिर्नुहोस्।" },
   rateOrder: { en: "How was everything?", ne: "खाना कस्तो लाग्यो?" },

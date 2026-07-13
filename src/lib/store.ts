@@ -108,6 +108,10 @@ class Store {
     if (!Array.isArray(db.orders)) db.orders = [];
     if (!Array.isArray(db.calls)) db.calls = [];
     if (!Array.isArray(db.inventoryLogs)) db.inventoryLogs = [];
+    db.calls.forEach((call) => {
+      call.acceptedAt ??= null;
+      call.acceptedBy ??= null;
+    });
 
     if (!db.staff.some((u) => u.id === "u-counter")) {
       db.staff.push({ id: "u-counter", name: "Counter", role: "counter", pin: "4444" });
@@ -309,7 +313,25 @@ class Store {
     this.mutate((db) => {
       const open = db.calls.some((c) => c.tableId === tableId && !c.resolvedAt);
       if (open) return; // one open call per table
-      db.calls.push({ id: uid(), tableId, createdAt: Date.now(), resolvedAt: null, resolvedBy: null });
+      db.calls.push({
+        id: uid(),
+        tableId,
+        createdAt: Date.now(),
+        acceptedAt: null,
+        acceptedBy: null,
+        resolvedAt: null,
+        resolvedBy: null,
+      });
+    });
+  }
+
+  acceptCall(callId: string, byUserId: string): void {
+    this.mutate((db) => {
+      const c = db.calls.find((x) => x.id === callId);
+      if (c && !c.resolvedAt) {
+        c.acceptedAt = Date.now();
+        c.acceptedBy = byUserId;
+      }
     });
   }
 
@@ -317,6 +339,8 @@ class Store {
     this.mutate((db) => {
       const c = db.calls.find((x) => x.id === callId);
       if (c) {
+        c.acceptedAt ??= Date.now();
+        c.acceptedBy ??= byUserId;
         c.resolvedAt = Date.now();
         c.resolvedBy = byUserId;
       }

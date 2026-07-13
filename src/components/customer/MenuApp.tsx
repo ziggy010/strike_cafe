@@ -98,7 +98,9 @@ export default function MenuApp({ tableId }: { tableId: string }) {
     writeStoredString("local", orderKey(tableId), null);
   }, [tableId]);
 
-  const hasOpenCall = db.calls.some((c) => c.tableId === tableId && !c.resolvedAt);
+  const openCall = db.calls.find((c) => c.tableId === tableId && !c.resolvedAt);
+  const hasOpenCall = !!openCall;
+  const callLabel = !openCall ? t("callWaiter") : openCall.acceptedAt ? t("waiterComing") : t("waiterCalling");
 
   if (hydrated && !table) {
     return (
@@ -142,7 +144,7 @@ export default function MenuApp({ tableId }: { tableId: string }) {
               }`}
             >
               {hasOpenCall ? <BellRing size={16} /> : <Bell size={16} />}
-              <span className="hidden min-[380px]:inline">{hasOpenCall ? t("waiterComing") : t("callWaiter")}</span>
+              <span className="hidden min-[380px]:inline">{callLabel}</span>
             </button>
           </div>
         </div>

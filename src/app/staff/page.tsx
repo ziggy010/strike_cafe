@@ -1,13 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { BellRing, Check, ChevronRight, QrCode } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { BellRing, Check, ChevronRight, Clock3, QrCode, UserCheck } from "lucide-react";
 import { useStaff } from "@/components/staff/StaffShell";
 import { StatusBadge } from "@/components/ui";
 import { getStore } from "@/lib/store";
 import { useDB } from "@/lib/useStore";
 import { clockTime, npr, timeAgo } from "@/lib/format";
-import type { Order, OrderStatus } from "@/lib/types";
+import type { Order, OrderStatus, WaiterCall } from "@/lib/types";
 import { isOpen } from "@/lib/types";
 
 const NEXT_STATUS: Partial<Record<OrderStatus, { to: OrderStatus; label: string }>> = {
@@ -28,9 +28,22 @@ export default function OrdersPage() {
   const db = useDB();
   const user = useStaff();
   const [tab, setTab] = useState<"open" | "closed">("open");
+  const [now, setNow] = useState(0);
 
-  const calls = db.calls.filter((c) => !c.resolvedAt);
+  useEffect(() => {
+    const interval = window.setInterval(() => setNow(Date.now()), 15000);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  const calls = useMemo(
+    () =>
+      db.calls
+        .filter((c) => !c.resolvedAt)
+        .sort((a, b) => Number(!!a.acceptedAt) - Number(!!b.acceptedAt) || a.createdAt - b.createdAt),
+    [db.calls],
+  );
   const tableLabel = (id: string) => db.tables.find((t) => t.id === id)?.label ?? "?";
+  const staffName = (id: string | null) => (id ? db.staff.find((s) => s.id === id)?.name ?? "Staff" : "Staff");
 
   const open = useMemo(
     () =>
@@ -75,22 +88,14 @@ export default function OrdersPage() {
       {calls.length > 0 && (
         <section aria-label="Waiter calls" className="mt-4 space-y-2">
           {calls.map((c) => (
-            <div
+            <WaiterCallCard
               key={c.id}
-              className="flex animate-ticket-in items-center justify-between rounded-card border border-saffron-deep/30 bg-saffron-soft px-4 py-3"
-            >
-              <p className="flex items-center gap-2 font-bold text-saffron-deep">
-                <BellRing size={18} />
-                Table {tableLabel(c.tableId)} is calling · {timeAgo(c.createdAt)}
-              </p>
-              <button
-                type="button"
-                onClick={() => getStore().resolveCall(c.id, user.id)}
-                className="flex items-center gap-1.5 rounded-ctl bg-saffron-deep px-3.5 py-2 text-sm font-bold text-cream"
-              >
-                <Check size={15} /> On it
-              </button>
-            </div>
+              call={c}
+              now={now}
+              staffName={staffName}
+              tableLabel={tableLabel(c.tableId)}
+              userId={user.id}
+            />
           ))}
         </section>
       )}
@@ -112,6 +117,73 @@ export default function OrdersPage() {
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+function WaiterCallCard({
+  call,
+  now,
+  staffName,
+  tableLabel,
+  userId,
+}: {
+  call: WaiterCall;
+  now: number;
+  staffName: (id: string | null) => string;
+  tableLabel: string;
+  userId: string;
+}) {
+  const store = getStore();
+  const claimed = !!call.acceptedAt;
+  const ageMin = now ? Math.max(0, Math.floor((now - call.createdAt) / 60000)) : 0;
+  const urgent = !claimed && ageMin >= 2;
+
+  return (
+    <div
+      className={`animate-ticket-in rounded-card border px-4 py-3 shadow-lift ${
+        urgent
+          ? "border-terracotta/45 bg-terracotta-soft"
+          : claimed
+            ? "border-pitch-bright/30 bg-pitch-soft"
+            : "border-saffron-deep/30 bg-saffron-soft"
+      }`}
+    >
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <p className={`flex items-center gap-2 font-bold ${claimed ? "text-pitch" : urgent ? "text-terracotta" : "text-saffron-deep"}`}>
+            {claimed ? <UserCheck size={18} /> : <BellRing size={18} />}
+            Table {tableLabel} needs staff
+          </p>
+          <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-ink-soft">
+            <span className="inline-flex items-center gap-1">
+              <Clock3 size={14} />
+              Waiting {ageMin < 1 ? "under 1 min" : `${ageMin} min`}
+            </span>
+            <span>{claimed ? `${staffName(call.acceptedBy)} is going` : `New call, ${timeAgo(call.createdAt)}`}</span>
+          </p>
+        </div>
+
+        <div className="flex shrink-0 gap-2">
+          {!claimed ? (
+            <button
+              type="button"
+              onClick={() => store.acceptCall(call.id, userId)}
+              className="pressable flex items-center justify-center gap-1.5 rounded-ctl bg-saffron-deep px-4 py-2.5 text-sm font-bold text-cream"
+            >
+              <UserCheck size={15} /> Going
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => store.resolveCall(call.id, userId)}
+              className="pressable flex items-center justify-center gap-1.5 rounded-ctl bg-pitch px-4 py-2.5 text-sm font-bold text-cream"
+            >
+              <Check size={15} /> Resolved
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
