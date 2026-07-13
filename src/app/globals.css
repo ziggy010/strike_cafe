@@ -193,3 +193,32 @@ button, a {
     transition-duration: 0.01ms !important;
   }
 }
+
+@media print {
+  body:has(.receipt-print-area) {
+    background: var(--color-surface);
+  }
+
+  body:has(.receipt-print-area)::before,
+  body:has(.receipt-print-area) .receipt-no-print {
+    display: none !important;
+  }
+
+  body:has(.receipt-print-area) * {
+    visibility: hidden;
+  }
+
+  body:has(.receipt-print-area) .receipt-print-area,
+  body:has(.receipt-print-area) .receipt-print-area * {
+    visibility: visible;
+  }
+
+  body:has(.receipt-print-area) .receipt-print-area {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 100%;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+}

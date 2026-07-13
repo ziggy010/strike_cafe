@@ -1,12 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Banknote, CheckCircle2, Clock3, CreditCard, QrCode, ReceiptText, Search } from "lucide-react";
+import { Banknote, CheckCircle2, Clock3, Copy, CreditCard, Printer, QrCode, ReceiptText, Search, Share2 } from "lucide-react";
 import { StatusBadge } from "@/components/ui";
 import { getStore } from "@/lib/store";
 import { useDB } from "@/lib/useStore";
 import { clockTime, npr, timeAgo } from "@/lib/format";
-import type { Order, OrderStatus } from "@/lib/types";
+import type { Order, OrderStatus, Settings } from "@/lib/types";
 
 type BillTab = "unpaid" | "paid";
 type BillGroup = {
@@ -30,6 +30,42 @@ function orderTotal(order: Order): number {
 
 function groupTotal(group: BillGroup): number {
   return group.orders.reduce((sum, order) => sum + orderTotal(order), 0);
+}
+
+function paymentLabel(method: Order["paymentMethod"]): string {
+  if (method === "cash") return "Cash";
+  if (method === "counter-qr") return "Counter QR";
+  return "Unpaid";
+}
+
+function buildReceiptText(group: BillGroup, settings: Settings): string {
+  const subtotal = groupTotal(group);
+  const service = Math.round((subtotal * settings.serviceChargePercent) / 100);
+  const vat = Math.round((subtotal * settings.vatPercent) / 100);
+  const total = subtotal + service + vat;
+  const allPaid = group.orders.every((order) => order.paid);
+  const method = allPaid ? paymentLabel(group.orders.find((order) => order.paymentMethod)?.paymentMethod ?? null) : "Unpaid";
+  const lines = group.orders.flatMap((order) =>
+    order.lines.map((line) => `${line.qty}x ${line.name} (${order.code}) ${npr(line.qty * line.price)}`),
+  );
+
+  return [
+    settings.cafeName,
+    `Table ${group.tableLabel}`,
+    `Orders: ${group.orders.map((order) => order.code).join(", ")}`,
+    "",
+    ...lines,
+    "",
+    service > 0 || vat > 0 ? `Subtotal: ${npr(subtotal)}` : null,
+    service > 0 ? `Service (${settings.serviceChargePercent}%): ${npr(service)}` : null,
+    vat > 0 ? `VAT (${settings.vatPercent}%): ${npr(vat)}` : null,
+    `Total: ${npr(total)}`,
+    `Status: ${allPaid ? `Paid by ${method}` : "Payment due"}`,
+    "",
+    "Thank you for visiting Strike Yard.",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 export default function BillingPage() {
@@ -184,6 +220,7 @@ export default function BillingPage() {
 
 function BillDetail({ group }: { group: BillGroup }) {
   const db = useDB();
+  const [copied, setCopied] = useState(false);
   const subtotal = groupTotal(group);
   const vat = Math.round((subtotal * db.settings.vatPercent) / 100);
   const service = Math.round((subtotal * db.settings.serviceChargePercent) / 100);
@@ -191,17 +228,80 @@ function BillDetail({ group }: { group: BillGroup }) {
   const itemCount = group.orders.reduce((sum, order) => sum + order.lines.reduce((lineSum, line) => lineSum + line.qty, 0), 0);
   const allPaid = group.orders.every((order) => order.paid);
   const firstPlacedAt = Math.min(...group.orders.map((order) => order.placedAt));
+  const latestUpdatedAt = Math.max(...group.orders.map((order) => order.updatedAt));
+  const paymentMethod = group.orders.find((order) => order.paymentMethod)?.paymentMethod ?? null;
   const store = getStore();
+  const canShare = typeof navigator !== "undefined" && "share" in navigator;
   const markGroupPaid = (method: "cash" | "counter-qr") => {
     group.orders.filter((order) => !order.paid).forEach((order) => store.markPaid(order.id, method));
   };
+  const receiptText = buildReceiptText(group, db.settings);
+
+  const printBill = () => {
+    window.print();
+  };
+
+  const shareBill = async () => {
+    setCopied(false);
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: `${db.settings.cafeName} bill, Table ${group.tableLabel}`,
+          text: receiptText,
+        });
+        return;
+      }
+      await navigator.clipboard.writeText(receiptText);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      try {
+        await navigator.clipboard.writeText(receiptText);
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1800);
+      } catch {
+        window.alert(receiptText);
+      }
+    }
+  };
 
   return (
-    <div className="overflow-hidden rounded-card border border-line bg-surface shadow-lift">
-      <div className="bg-pitch px-5 py-5 text-cream">
+    <div className="receipt-print-area overflow-hidden rounded-card border border-line bg-surface shadow-lift">
+      <div className="receipt-no-print flex flex-wrap items-center justify-between gap-2 border-b border-line bg-cream px-5 py-3">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-widest text-ink-faint">Receipt actions</p>
+          <p className="text-sm text-ink-soft">{allPaid ? "Ready to print or share." : "Collect payment, then print or share."}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={printBill}
+            className="pressable flex items-center gap-1.5 rounded-ctl bg-pitch px-3.5 py-2 text-sm font-bold text-cream"
+          >
+            <Printer size={16} /> Print bill
+          </button>
+          <button
+            type="button"
+            onClick={shareBill}
+            className="pressable flex items-center gap-1.5 rounded-ctl border border-pitch/30 px-3.5 py-2 text-sm font-bold text-pitch hover:bg-pitch-soft"
+          >
+            {canShare ? <Share2 size={16} /> : <Copy size={16} />}
+            {copied ? "Copied" : canShare ? "Share bill" : "Copy bill"}
+          </button>
+        </div>
+      </div>
+
+      <div className="relative bg-pitch px-5 py-5 text-cream">
+        <div
+          className={`absolute right-5 top-5 rotate-[-4deg] rounded-ctl border px-3 py-1 text-xs font-black uppercase tracking-[0.18em] ${
+            allPaid ? "border-pitch-bright/60 text-pitch-bright" : "border-terracotta/70 text-terracotta-soft"
+          }`}
+        >
+          {allPaid ? "Paid" : "Due"}
+        </div>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-bold uppercase tracking-widest opacity-75">Strike Yard Bill</p>
+            <p className="text-xs font-bold uppercase tracking-widest opacity-75">{db.settings.cafeName} Bill</p>
             <h2 className="mt-1 font-display text-3xl leading-none">Table {group.tableLabel}</h2>
             <p className="mt-2 text-sm opacity-85">
               {group.orders.map((order) => order.code).join(", ")} · {clockTime(firstPlacedAt)} · {itemCount} item{itemCount === 1 ? "" : "s"}
@@ -222,6 +322,11 @@ function BillDetail({ group }: { group: BillGroup }) {
           <span className={`rounded-full px-2.5 py-1 text-xs font-bold uppercase tracking-wide ${allPaid ? "bg-pitch-soft text-pitch" : "bg-terracotta-soft text-terracotta"}`}>
             {allPaid ? "Paid" : "Payment due"}
           </span>
+          {allPaid && (
+            <span className="rounded-full bg-cream px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-ink-soft">
+              {paymentLabel(paymentMethod)} · {clockTime(latestUpdatedAt)}
+            </span>
+          )}
         </div>
 
         <div className="mt-4 overflow-hidden rounded-ctl border border-line">
@@ -270,7 +375,7 @@ function BillDetail({ group }: { group: BillGroup }) {
             </div>
           )}
           <div className="flex justify-between gap-5 border-t border-line pt-2 text-lg font-bold text-ink">
-            <dt>Total due</dt>
+            <dt>{allPaid ? "Total paid" : "Total due"}</dt>
             <dd className="font-display">{npr(total)}</dd>
           </div>
         </dl>
@@ -303,6 +408,12 @@ function BillDetail({ group }: { group: BillGroup }) {
           <CreditCard size={13} />
           Cash and counter QR payments are recorded here for reports.
         </p>
+
+        <div className="mt-5 border-t border-line pt-4 text-center">
+          <p className="font-display text-lg text-pitch">{db.settings.cafeName}</p>
+          <p className="text-xs text-ink-faint">{db.settings.tagline}</p>
+          <p className="mt-2 text-xs text-ink-soft">Thank you. Please visit again.</p>
+        </div>
       </div>
     </div>
   );
