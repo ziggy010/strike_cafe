@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Download } from "lucide-react";
+import { Banknote, Download, QrCode, ReceiptText, TrendingUp } from "lucide-react";
 import { useArchive, useDB } from "@/lib/useStore";
 import { npr } from "@/lib/format";
-import { orderTotal } from "@/lib/orders";
+import { linesSubtotal, orderTotal } from "@/lib/orders";
 
 type Period = "today" | "7d" | "30d";
 
@@ -29,8 +29,14 @@ export default function ReportsPage() {
   const cancelled = allOrders.filter((o) => o.placedAt >= since && o.status === "cancelled");
 
   const revenue = served.reduce((n, o) => n + orderTotal(o), 0);
+  const grossSales = served.reduce((n, o) => n + linesSubtotal(o.lines), 0);
   const discountsGiven = served.reduce((n, o) => n + (o.discount?.amount ?? 0), 0);
   const avgTicket = served.length ? Math.round(revenue / served.length) : 0;
+  const paidServed = served.filter((o) => o.paid);
+  const unpaidServed = served.filter((o) => !o.paid);
+  const cashRevenue = paidServed.filter((o) => o.paymentMethod === "cash").reduce((n, o) => n + orderTotal(o), 0);
+  const qrRevenue = paidServed.filter((o) => o.paymentMethod === "counter-qr").reduce((n, o) => n + orderTotal(o), 0);
+  const uncollectedServed = unpaidServed.reduce((n, o) => n + orderTotal(o), 0);
   const ratings = served.filter((o) => o.feedback).map((o) => o.feedback!.rating);
   const avgRating = ratings.length ? (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1) : null;
 
@@ -44,7 +50,7 @@ export default function ReportsPage() {
       salesMap.set(l.itemId, e);
     }
   }
-  const bySales = [...salesMap.values()].sort((a, b) => b.qty - a.qty).slice(0, 8);
+  const bySales = [...salesMap.values()].sort((a, b) => b.revenue - a.revenue).slice(0, 8);
 
   // Revenue by category
   const itemCat = new Map(db.items.map((i) => [i.id, i.categoryId]));
@@ -62,7 +68,10 @@ export default function ReportsPage() {
   const byHour = Array.from({ length: 15 }, (_, i) => i + 7).map((h) => ({
     hour: h,
     count: orders.filter((o) => new Date(o.placedAt).getHours() === h).length,
+    revenue: served.filter((o) => new Date(o.placedAt).getHours() === h).reduce((n, o) => n + orderTotal(o), 0),
   })); // 7:00–21:00
+  const peakHour = byHour.reduce((best, cur) => (cur.count > best.count ? cur : best), byHour[0]);
+  const completionRate = orders.length ? Math.round((served.length / orders.length) * 100) : 0;
 
   // Staff performance: orders served/closed per staff member
   const staffMap = new Map<string, number>();
@@ -75,7 +84,7 @@ export default function ReportsPage() {
 
   const exportCSV = () => {
     const rows = [
-      ["code", "table", "placed_at", "status", "paid", "payment_method", "items", "total_npr", "rating"],
+      ["code", "table", "placed_at", "status", "paid", "payment_method", "items", "gross_npr", "discount_code", "discount_npr", "net_npr", "rating"],
       ...allOrders
         .filter((o) => o.placedAt >= since)
         .map((o) => [
@@ -86,6 +95,9 @@ export default function ReportsPage() {
           o.paid ? "yes" : "no",
           o.paymentMethod ?? "",
           o.lines.map((l) => `${l.qty}x ${l.name}`).join("; "),
+          String(linesSubtotal(o.lines)),
+          o.discount?.code ?? "",
+          String(o.discount?.amount ?? 0),
           String(orderTotal(o)),
           o.feedback ? String(o.feedback.rating) : "",
         ]),
@@ -99,9 +111,14 @@ export default function ReportsPage() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 py-6 lg:px-8">
+    <div className="mx-auto w-full max-w-5xl px-4 py-6 lg:px-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="font-display text-2xl text-pitch">Reports</h1>
+        <div>
+          <h1 className="font-display text-2xl text-pitch">Reports</h1>
+          <p className="mt-1 text-sm text-ink-soft">
+            {period === "today" ? "Today" : period === "7d" ? "Last 7 days" : "Last 30 days"} closeout, sales, payments, and menu performance.
+          </p>
+        </div>
         <div className="flex items-center gap-2">
           <div className="flex rounded-ctl border border-line bg-surface p-0.5 text-sm font-bold">
             {(
@@ -134,8 +151,8 @@ export default function ReportsPage() {
 
       {/* Headline numbers */}
       <dl className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Metric label="Revenue (served)" value={npr(revenue)} />
-        <Metric label="Orders served" value={String(served.length)} sub={cancelled.length ? `${cancelled.length} cancelled` : undefined} />
+        <Metric label="Net sales" value={npr(revenue)} sub={grossSales !== revenue ? `${npr(grossSales)} before promos` : "served orders"} />
+        <Metric label="Orders served" value={String(served.length)} sub={`${completionRate}% complete${cancelled.length ? ` · ${cancelled.length} cancelled` : ""}`} />
         <Metric
           label="Average ticket"
           value={served.length ? npr(avgTicket) : "—"}
@@ -143,6 +160,41 @@ export default function ReportsPage() {
         />
         <Metric label="Customer rating" value={avgRating ? `${avgRating} / 5` : "—"} sub={ratings.length ? `${ratings.length} ratings` : "no ratings yet"} />
       </dl>
+
+      <div className="mt-3 grid gap-3 lg:grid-cols-[1.1fr_0.9fr]">
+        <section className="rounded-card border border-line bg-surface p-4 shadow-lift" aria-label="Payment split">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="font-display text-lg">Payment split</h2>
+            <span className="rounded-full bg-pitch-soft px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-pitch">
+              {npr(cashRevenue + qrRevenue)} collected
+            </span>
+          </div>
+          <div className="mt-4 grid gap-2 sm:grid-cols-3">
+            <PaymentMetric icon="cash" label="Cash" value={cashRevenue} />
+            <PaymentMetric icon="qr" label="Counter QR" value={qrRevenue} />
+            <PaymentMetric icon="due" label="Served, unpaid" value={uncollectedServed} danger />
+          </div>
+        </section>
+
+        <section className="rounded-card border border-line bg-surface p-4 shadow-lift" aria-label="Shift pulse">
+          <div className="flex items-center gap-2">
+            <TrendingUp size={18} className="text-pitch" />
+            <h2 className="font-display text-lg">Shift pulse</h2>
+          </div>
+          <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
+            <div>
+              <dt className="font-bold uppercase tracking-wide text-ink-faint text-xs">Peak hour</dt>
+              <dd className="price mt-1 font-display text-xl">{peakHour.count ? `${peakHour.hour}:00` : "—"}</dd>
+              <dd className="text-xs text-ink-faint">{peakHour.count ? `${peakHour.count} orders` : "No demand yet"}</dd>
+            </div>
+            <div>
+              <dt className="font-bold uppercase tracking-wide text-ink-faint text-xs">Open now</dt>
+              <dd className="price mt-1 font-display text-xl">{orders.filter((o) => o.status !== "served").length}</dd>
+              <dd className="text-xs text-ink-faint">active or unpaid flow</dd>
+            </div>
+          </dl>
+        </section>
+      </div>
 
       {served.length === 0 && orders.length === 0 ? (
         <p className="mt-14 text-center text-ink-faint">
@@ -153,7 +205,7 @@ export default function ReportsPage() {
           <section aria-label="Best sellers">
             <h2 className="font-display text-lg">Best sellers</h2>
             <BarList
-              rows={bySales.map((s) => ({ label: s.name, value: s.qty, detail: `${s.qty} sold · ${npr(s.revenue)}` }))}
+              rows={bySales.map((s) => ({ label: s.name, value: s.revenue, detail: `${s.qty} sold · ${npr(s.revenue)}` }))}
               empty="Nothing served yet."
             />
           </section>
@@ -168,21 +220,23 @@ export default function ReportsPage() {
 
           <section aria-label="Peak hours">
             <h2 className="font-display text-lg">Peak hours</h2>
-            <div className="mt-3 flex h-36 items-end gap-1 rounded-card border border-line bg-surface p-4">
+            <div className="mt-3 flex h-44 items-end gap-1 rounded-card border border-line bg-surface p-4">
               {byHour.map(({ hour, count }) => {
                 const max = Math.max(1, ...byHour.map((x) => x.count));
                 return (
                   <div key={hour} className="flex flex-1 flex-col items-center gap-1" title={`${count} orders at ${hour}:00`}>
                     <div
-                      className={`w-full rounded-t-[3px] ${count > 0 ? "bg-pitch-bright" : "bg-line-soft"}`}
-                      style={{ height: `${Math.max(3, (count / max) * 88)}px` }}
+                      className={`w-full rounded-t-[3px] transition-colors ${count > 0 ? "bg-pitch-bright" : "bg-line-soft"}`}
+                      style={{ height: `${Math.max(4, (count / max) * 112)}px` }}
                     />
                     <span className="tabular text-[10px] text-ink-faint">{hour}</span>
                   </div>
                 );
               })}
             </div>
-            <p className="mt-1.5 text-xs text-ink-faint">Orders placed per hour (7:00–21:00)</p>
+            <p className="mt-1.5 text-xs text-ink-faint">
+              Orders placed per hour, 7:00 to 21:00. Peak: {peakHour.count ? `${peakHour.hour}:00 with ${peakHour.count} orders and ${npr(peakHour.revenue)}` : "no orders yet"}.
+            </p>
           </section>
 
           <section aria-label="Staff performance">
@@ -194,6 +248,28 @@ export default function ReportsPage() {
           </section>
         </div>
       )}
+    </div>
+  );
+}
+
+function PaymentMetric({
+  icon,
+  label,
+  value,
+  danger,
+}: {
+  icon: "cash" | "qr" | "due";
+  label: string;
+  value: number;
+  danger?: boolean;
+}) {
+  const Icon = icon === "cash" ? Banknote : icon === "qr" ? QrCode : ReceiptText;
+  return (
+    <div className={`rounded-ctl border px-3 py-3 ${danger ? "border-terracotta/30 bg-terracotta-soft" : "border-line bg-cream"}`}>
+      <p className={`flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide ${danger ? "text-terracotta" : "text-ink-faint"}`}>
+        <Icon size={14} /> {label}
+      </p>
+      <p className="price mt-1 font-display text-xl text-ink">{value ? npr(value) : "—"}</p>
     </div>
   );
 }
