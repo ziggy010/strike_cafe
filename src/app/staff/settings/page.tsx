@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, Check, Plus, Trash2 } from "lucide-react";
 import { getStore } from "@/lib/store";
 import { useDB } from "@/lib/useStore";
 import { useStaff } from "@/components/staff/StaffShell";
+import { looksLikeEmvQr } from "@/lib/nepalQr";
 import type { Role, Settings } from "@/lib/types";
 
 export default function SettingsPage() {
@@ -103,6 +104,53 @@ export default function SettingsPage() {
           />
           Play a chime when a new order arrives
         </label>
+      </section>
+
+      <section className="mt-7 space-y-3" aria-label="Payment QR">
+        <h2 className="font-display text-lg">Payment QR</h2>
+        <label className="flex items-center gap-3 text-sm font-bold">
+          <input
+            type="checkbox"
+            checked={s.paymentQr.enabled}
+            onChange={(e) => set("paymentQr", { ...s.paymentQr, enabled: e.target.checked })}
+            className="h-5 w-5 accent-(--color-pitch)"
+          />
+          Show a scan-to-pay QR with the bill amount
+        </label>
+
+        {s.paymentQr.enabled && (
+          <>
+            <label className="block text-sm font-bold">
+              Your NepalPay / eSewa merchant QR
+              <textarea
+                value={s.paymentQr.staticData}
+                onChange={(e) => set("paymentQr", { ...s.paymentQr, staticData: e.target.value.trim() })}
+                rows={3}
+                placeholder="Paste the text content of your static merchant QR (starts with 000201…)"
+                className="mt-1 w-full rounded-ctl border border-line bg-surface px-3.5 py-2.5 font-mono text-xs outline-none focus:border-pitch-bright"
+              />
+            </label>
+
+            {s.paymentQr.staticData &&
+              (looksLikeEmvQr(s.paymentQr.staticData) ? (
+                <p className="flex items-center gap-1.5 text-sm font-bold text-pitch-bright">
+                  <Check size={15} /> Recognized — bills will show a QR pre-filled with the amount.
+                </p>
+              ) : (
+                <p className="flex items-start gap-1.5 text-sm font-bold text-terracotta">
+                  <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+                  That doesn&apos;t look like a NepalPay QR. Paste the text your merchant QR encodes.
+                </p>
+              ))}
+
+            <p className="text-xs leading-relaxed text-ink-faint">
+              This reuses your own merchant QR, so payments still go to your account — the customer
+              just doesn&apos;t type the amount. To get the text: open any QR-scanner app, scan the
+              printed QR your bank/eSewa gave you, and copy the result here. The remark is set to
+              &ldquo;{s.cafeName}&rdquo; automatically. Test-scan one bill before going live.
+            </p>
+          </>
+        )}
       </section>
 
       <div className="mt-6 flex items-center gap-3">

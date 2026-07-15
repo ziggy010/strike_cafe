@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Trash2 } from "lucide-react";
+import { BadgePercent, Trash2 } from "lucide-react";
 import type { CartLine } from "./cart";
 import { DietMark, Sheet, SpiceLevel, Stepper } from "@/components/ui";
 import { getStore } from "@/lib/store";
@@ -105,6 +105,8 @@ export function CartSheet({
   setCart,
   onSubmit,
   appending,
+  promoCode,
+  setPromoCode,
 }: {
   open: boolean;
   onClose: () => void;
@@ -112,14 +114,27 @@ export function CartSheet({
   setCart: React.Dispatch<React.SetStateAction<CartLine[]>>;
   onSubmit: () => void;
   appending: boolean;
+  promoCode: string | null;
+  setPromoCode: (code: string | null) => void;
 }) {
   const { lang, t } = useLang();
   const db = useDB();
+  const [codeInput, setCodeInput] = useState("");
+  const [promoError, setPromoError] = useState<string | null>(null);
 
   const subtotal = cart.reduce((n, l) => n + l.qty * l.price, 0);
-  const vat = Math.round((subtotal * db.settings.vatPercent) / 100);
-  const service = Math.round((subtotal * db.settings.serviceChargePercent) / 100);
-  const total = subtotal + vat + service;
+
+  // Discount is recomputed live from the current subtotal, so editing the cart
+  // after applying a code always keeps the amount honest.
+  const promo = promoCode ? getStore().validatePromo(promoCode, subtotal) : null;
+  const discount = promo?.ok ? promo.amount : 0;
+  // A code that fell below its minimum after an edit: keep it, but flag it.
+  const promoDropped = promoCode !== null && promo !== null && !promo.ok;
+
+  const discounted = Math.max(0, subtotal - discount);
+  const vat = Math.round((discounted * db.settings.vatPercent) / 100);
+  const service = Math.round((discounted * db.settings.serviceChargePercent) / 100);
+  const total = discounted + vat + service;
   const waitMin = cart.length > 0 ? getStore().estimateWait(cart) : 0;
 
   const setQty = (line: CartLine, qty: number) => {
@@ -127,6 +142,21 @@ export function CartSheet({
   };
   const remove = (line: CartLine) => {
     setCart((prev) => prev.filter((l) => l !== line));
+  };
+
+  const applyCode = () => {
+    const code = codeInput.trim();
+    if (!code) return;
+    const res = getStore().validatePromo(code, subtotal);
+    if (res.ok) {
+      setPromoCode(res.code);
+      setCodeInput("");
+      setPromoError(null);
+    } else {
+      setPromoError(
+        res.reason === "min" ? t("promoMin") : res.reason === "expired" ? t("promoExpired") : t("promoInvalid"),
+      );
+    }
   };
 
   return (
@@ -163,11 +193,68 @@ export function CartSheet({
             ))}
           </ul>
 
+          {/* Promo code */}
+          {!appending && (
+            <div className="mt-3 border-t border-line pt-3">
+              {promoCode && promo?.ok ? (
+                <div className="flex items-center justify-between rounded-ctl bg-pitch-soft px-3 py-2.5">
+                  <span className="flex items-center gap-1.5 text-sm font-bold text-pitch">
+                    <BadgePercent size={15} />
+                    {promoCode} · {t("promoApplied")}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPromoCode(null);
+                      setPromoError(null);
+                    }}
+                    className="pressable text-sm font-bold text-ink-soft hover:text-terracotta"
+                  >
+                    {t("remove")}
+                  </button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={codeInput}
+                    onChange={(e) => {
+                      setCodeInput(e.target.value.toUpperCase());
+                      setPromoError(null);
+                    }}
+                    onKeyDown={(e) => e.key === "Enter" && applyCode()}
+                    placeholder={t("promoPlaceholder")}
+                    aria-label={t("promoCode")}
+                    className="h-11 min-w-0 flex-1 rounded-ctl border border-line bg-cream px-3.5 text-[15px] uppercase tracking-wide outline-none placeholder:normal-case placeholder:tracking-normal placeholder:text-ink-faint focus:border-pitch-bright"
+                  />
+                  <button
+                    type="button"
+                    onClick={applyCode}
+                    disabled={!codeInput.trim()}
+                    className="pressable rounded-ctl border border-pitch/30 px-4 text-sm font-bold text-pitch disabled:opacity-40"
+                  >
+                    {t("apply")}
+                  </button>
+                </div>
+              )}
+              {promoError && <p className="mt-1.5 text-sm font-bold text-terracotta">{promoError}</p>}
+              {promoDropped && <p className="mt-1.5 text-sm font-bold text-terracotta">{t("promoMin")}</p>}
+            </div>
+          )}
+
           <dl className="price mt-2 space-y-1.5 border-t border-line pt-3 text-sm">
-            {(vat > 0 || service > 0) && (
+            {(vat > 0 || service > 0 || discount > 0) && (
               <div className="flex justify-between text-ink-soft">
                 <dt>{t("subtotal")}</dt>
                 <dd>{npr(subtotal)}</dd>
+              </div>
+            )}
+            {discount > 0 && (
+              <div className="flex justify-between font-bold text-pitch">
+                <dt>
+                  {t("discount")} ({promoCode})
+                </dt>
+                <dd>−{npr(discount)}</dd>
               </div>
             )}
             {vat > 0 && (

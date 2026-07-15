@@ -7,6 +7,7 @@ import { StatusBadge } from "@/components/ui";
 import { getStore } from "@/lib/store";
 import { useDB } from "@/lib/useStore";
 import { clockTime, npr, timeAgo } from "@/lib/format";
+import { linesSubtotal, orderTotal } from "@/lib/orders";
 import type { Order, OrderStatus, WaiterCall } from "@/lib/types";
 import { isOpen } from "@/lib/types";
 
@@ -190,7 +191,7 @@ function WaiterCallCard({
 
 function OrderCard({ order, tableLabel, userId }: { order: Order; tableLabel: string; userId: string }) {
   const [expanded, setExpanded] = useState(isOpen(order));
-  const total = order.lines.reduce((n, l) => n + l.qty * l.price, 0);
+  const total = orderTotal(order);
   const next = NEXT_STATUS[order.status];
   const store = getStore();
 
@@ -240,6 +241,15 @@ function OrderCard({ order, tableLabel, userId }: { order: Order; tableLabel: st
               </li>
             ))}
           </ul>
+
+          {order.discount && (
+            <div className="price mt-2 flex items-center justify-between border-t border-line-soft pt-2 text-sm">
+              <span className="font-bold text-pitch">Promo {order.discount.code}</span>
+              <span className="text-ink-soft">
+                −{npr(order.discount.amount)} · was {npr(linesSubtotal(order.lines))}
+              </span>
+            </div>
+          )}
 
           <div className="mt-3.5 flex flex-wrap items-center gap-2">
             {next && (

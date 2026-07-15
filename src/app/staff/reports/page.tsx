@@ -2,14 +2,15 @@
 
 import { useState } from "react";
 import { Download } from "lucide-react";
-import { useDB } from "@/lib/useStore";
+import { useArchive, useDB } from "@/lib/useStore";
 import { npr } from "@/lib/format";
-import type { Order } from "@/lib/types";
+import { orderTotal } from "@/lib/orders";
 
 type Period = "today" | "7d" | "30d";
 
 export default function ReportsPage() {
   const db = useDB();
+  const archive = useArchive();
   const [period, setPeriod] = useState<Period>("today");
 
   const sinceDate = new Date();
@@ -18,13 +19,17 @@ export default function ReportsPage() {
   if (period === "30d") sinceDate.setDate(sinceDate.getDate() - 29);
   const since = sinceDate.getTime();
 
-  // Revenue counts served orders; cancelled are tracked separately.
-  const orders = db.orders.filter((o) => o.placedAt >= since && o.status !== "cancelled");
-  const served = orders.filter((o) => o.status === "served");
-  const cancelled = db.orders.filter((o) => o.placedAt >= since && o.status === "cancelled");
+  // Live board holds today's + still-open orders; archive holds closed past-day
+  // orders. They're disjoint, so a plain concat is safe.
+  const allOrders = period === "today" ? db.orders : [...db.orders, ...archive];
 
-  const orderTotal = (o: Order) => o.lines.reduce((n, l) => n + l.qty * l.price, 0);
+  // Revenue counts served orders; cancelled are tracked separately.
+  const orders = allOrders.filter((o) => o.placedAt >= since && o.status !== "cancelled");
+  const served = orders.filter((o) => o.status === "served");
+  const cancelled = allOrders.filter((o) => o.placedAt >= since && o.status === "cancelled");
+
   const revenue = served.reduce((n, o) => n + orderTotal(o), 0);
+  const discountsGiven = served.reduce((n, o) => n + (o.discount?.amount ?? 0), 0);
   const avgTicket = served.length ? Math.round(revenue / served.length) : 0;
   const ratings = served.filter((o) => o.feedback).map((o) => o.feedback!.rating);
   const avgRating = ratings.length ? (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1) : null;
@@ -71,7 +76,7 @@ export default function ReportsPage() {
   const exportCSV = () => {
     const rows = [
       ["code", "table", "placed_at", "status", "paid", "payment_method", "items", "total_npr", "rating"],
-      ...db.orders
+      ...allOrders
         .filter((o) => o.placedAt >= since)
         .map((o) => [
           o.code,
@@ -131,7 +136,11 @@ export default function ReportsPage() {
       <dl className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Metric label="Revenue (served)" value={npr(revenue)} />
         <Metric label="Orders served" value={String(served.length)} sub={cancelled.length ? `${cancelled.length} cancelled` : undefined} />
-        <Metric label="Average ticket" value={served.length ? npr(avgTicket) : "—"} />
+        <Metric
+          label="Average ticket"
+          value={served.length ? npr(avgTicket) : "—"}
+          sub={discountsGiven > 0 ? `${npr(discountsGiven)} in promos` : undefined}
+        />
         <Metric label="Customer rating" value={avgRating ? `${avgRating} / 5` : "—"} sub={ratings.length ? `${ratings.length} ratings` : "no ratings yet"} />
       </dl>
 

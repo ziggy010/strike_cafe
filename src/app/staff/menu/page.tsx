@@ -202,7 +202,9 @@ function readPhoto(file: File): Promise<string> {
       canvas.height = Math.round(img.height * scale);
       canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
       URL.revokeObjectURL(url);
-      resolve(canvas.toDataURL("image/jpeg", 0.82));
+      // WebP data URL: smaller than JPEG, and menu photos ride inside the
+      // synced app_state blob, so keeping them small keeps realtime fast.
+      resolve(canvas.toDataURL("image/webp", 0.8));
     };
     img.onerror = reject;
     img.src = url;

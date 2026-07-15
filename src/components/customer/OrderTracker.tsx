@@ -5,6 +5,7 @@ import { Check, ChefHat, HandPlatter, Inbox, Star } from "lucide-react";
 import { getStore } from "@/lib/store";
 import { useLang } from "@/lib/i18n";
 import { npr } from "@/lib/format";
+import { orderTotal } from "@/lib/orders";
 import type { Order } from "@/lib/types";
 import { isOpen } from "@/lib/types";
 
@@ -27,7 +28,7 @@ export function OrderTracker({
 
   const stepIndex =
     order.status === "received" ? 0 : order.status === "preparing" ? 1 : order.status === "ready" ? 2 : 3;
-  const total = order.lines.reduce((n, l) => n + l.qty * l.price, 0);
+  const total = orderTotal(order);
   const waitMin = isOpen(order) && order.status !== "ready" ? getStore().estimateWait(order.lines) : 0;
 
   if (order.status === "cancelled") {

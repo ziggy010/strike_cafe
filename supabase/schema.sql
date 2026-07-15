@@ -1,10 +1,14 @@
--- Hamro Chwok — Supabase schema (go-live phase)
+-- Strike Yard — Supabase schema (go-live phase)
 -- Mirrors src/lib/types.ts. Run in the Supabase SQL editor of a new project.
 -- Realtime: enable on orders + waiter_calls (Database → Replication).
 
--- Current GitHub Pages build uses this compact shared state row for realtime
--- cross-device sync. It keeps the static site simple: customer phones and
--- staff phones all read/write the same JSON document from the browser.
+-- Current build uses this compact shared state row for realtime cross-device
+-- sync. It keeps the static site simple: customer phones and staff phones all
+-- read/write the same JSON document from the browser.
+--
+-- IMPORTANT: this row holds only TODAY's + still-open orders. Closed past-day
+-- orders are moved to order_archive (below) so this document stays small and
+-- every realtime update stays fast no matter how busy the café gets.
 create table if not exists app_state (
   id text primary key,
   data jsonb not null,
@@ -31,6 +35,32 @@ begin
 exception
   when duplicate_object then null;
 end $$;
+
+-- Append-only history of closed orders, one row each (never bulk re-synced).
+-- Reports hydrate the last ~40 days from here; the live app_state stays lean.
+create table if not exists order_archive (
+  id text primary key,          -- reuses the order id
+  data jsonb not null,          -- the full Order object
+  placed_at timestamptz not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists order_archive_placed_idx on order_archive (placed_at desc);
+
+alter table order_archive enable row level security;
+
+-- Staff screens write and read the archive. If you later add Supabase Auth,
+-- tighten these to authenticated staff only.
+drop policy if exists "public read archive" on order_archive;
+create policy "public read archive" on order_archive
+  for select using (true);
+
+drop policy if exists "public write archive" on order_archive;
+create policy "public write archive" on order_archive
+  for insert with check (true);
+
+drop policy if exists "public update archive" on order_archive;
+create policy "public update archive" on order_archive
+  for update using (true) with check (true);
 
 create table categories (
   id uuid primary key default gen_random_uuid(),

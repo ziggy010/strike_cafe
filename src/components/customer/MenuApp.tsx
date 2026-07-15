@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Bell, BellRing, Clock3, ShoppingBag, Sparkles } from "lucide-react";
+import { Bell, BellRing, Clock3, Plus, Search, ShoppingBag, Sparkles, X } from "lucide-react";
 import type { CartLine } from "./cart";
 import { ItemSheet, CartSheet } from "./Sheets";
 import { OrderTracker } from "./OrderTracker";
@@ -11,17 +11,17 @@ import { useDB, useHydrated, useStoredString, writeStoredString } from "@/lib/us
 import { assetPath } from "@/lib/assets";
 import { loc, useLang } from "@/lib/i18n";
 import { inWindow, npr } from "@/lib/format";
-import type { MenuItem } from "@/lib/types";
+import type { Combo, MenuItem } from "@/lib/types";
 import { isOpen } from "@/lib/types";
 
 const orderKey = (tableId: string) => `strike-yard-order-${tableId}`;
-const heroPhoto = assetPath("/food/burger.jpg");
+const heroPhoto = assetPath("/food/burger.webp");
 const CATEGORY_META: Record<string, { photo: string; tone: string; kicker: string }> = {
-  "cat-coffee": { photo: assetPath("/food/latte.jpg"), tone: "bg-pitch", kicker: "Fresh pulls" },
-  "cat-cold": { photo: assetPath("/food/lemonade.jpg"), tone: "bg-pitch-bright", kicker: "Post-game chill" },
-  "cat-snacks": { photo: assetPath("/food/momo.jpg"), tone: "bg-saffron-deep", kicker: "Fast bites" },
-  "cat-meals": { photo: assetPath("/food/dalbhat.jpg"), tone: "bg-terracotta", kicker: "Full plates" },
-  "cat-breakfast": { photo: assetPath("/food/pancakes.jpg"), tone: "bg-saffron", kicker: "Morning only" },
+  "cat-coffee": { photo: assetPath("/food/latte.webp"), tone: "bg-pitch", kicker: "Fresh pulls" },
+  "cat-cold": { photo: assetPath("/food/lemonade.webp"), tone: "bg-pitch-bright", kicker: "Post-game chill" },
+  "cat-snacks": { photo: assetPath("/food/momo.webp"), tone: "bg-saffron-deep", kicker: "Fast bites" },
+  "cat-meals": { photo: assetPath("/food/dalbhat.webp"), tone: "bg-terracotta", kicker: "Full plates" },
+  "cat-breakfast": { photo: assetPath("/food/pancakes.webp"), tone: "bg-saffron", kicker: "Morning only" },
 };
 
 export default function MenuApp({ tableId }: { tableId: string }) {
@@ -36,6 +36,9 @@ export default function MenuApp({ tableId }: { tableId: string }) {
   const [openItem, setOpenItem] = useState<MenuItem | null>(null);
   const [cartOpen, setCartOpen] = useState(false);
   const [justPlaced, setJustPlaced] = useState(false);
+  const [query, setQuery] = useState("");
+  const [dietFilter, setDietFilter] = useState<"all" | "veg" | "nonveg">("all");
+  const [promoCode, setPromoCode] = useState<string | null>(null);
 
   // This table's open order id persists in localStorage so a page refresh
   // (or accidental tab close) doesn't lose the tracker.
@@ -64,6 +67,37 @@ export default function MenuApp({ tableId }: { tableId: string }) {
     [db.items],
   );
 
+  // Combos whose components are all currently available.
+  const activeCombos = useMemo(() => {
+    const byId = new Map(db.items.map((i) => [i.id, i]));
+    return db.combos.filter(
+      (c) =>
+        c.active &&
+        c.itemIds.length > 0 &&
+        c.itemIds.every((id) => {
+          const it = byId.get(id);
+          return it && it.stock !== "out" && inWindow(it.availableWindow);
+        }),
+    );
+  }, [db.combos, db.items]);
+
+  const searching = query.trim() !== "" || dietFilter !== "all";
+  const results = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return [...db.items]
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .filter((i) => (dietFilter === "all" ? true : i.diet === dietFilter))
+      .filter(
+        (i) =>
+          !q ||
+          `${i.name} ${i.nameNe} ${i.description} ${i.descriptionNe}`.toLowerCase().includes(q),
+      );
+  }, [db.items, query, dietFilter]);
+  const clearSearch = useCallback(() => {
+    setQuery("");
+    setDietFilter("all");
+  }, []);
+
   const cartCount = cart.reduce((n, l) => n + l.qty, 0);
   const cartTotal = cart.reduce((n, l) => n + l.qty * l.price, 0);
 
@@ -78,20 +112,44 @@ export default function MenuApp({ tableId }: { tableId: string }) {
     setOpenItem(null);
   }, []);
 
+  // A combo becomes one cart line at the bundle price, with its components in
+  // the note so the kitchen and bill need no special handling.
+  const addCombo = useCallback(
+    (combo: Combo) => {
+      const parts = combo.itemIds
+        .map((id) => db.items.find((i) => i.id === id)?.name)
+        .filter(Boolean)
+        .join(" + ");
+      addLine({
+        itemId: `combo:${combo.id}`,
+        name: combo.name,
+        nameNe: combo.nameNe || combo.name,
+        price: combo.price,
+        qty: 1,
+        note: parts,
+      });
+    },
+    [db.items, addLine],
+  );
+
   const submitCart = useCallback(() => {
     if (cart.length === 0) return;
     const store = getStore();
     if (order && isOpen(order)) {
       store.appendToOrder(order.id, cart);
     } else {
-      const placed = store.placeOrder(tableId, cart);
+      const subtotal = cart.reduce((n, l) => n + l.qty * l.price, 0);
+      const res = promoCode ? store.validatePromo(promoCode, subtotal) : null;
+      const discount = res?.ok ? { code: res.code, amount: res.amount } : null;
+      const placed = store.placeOrder(tableId, cart, discount);
       writeStoredString("local", orderKey(tableId), placed.id);
     }
     setCart([]);
+    setPromoCode(null);
     setCartOpen(false);
     setJustPlaced(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
-  }, [cart, order, tableId]);
+  }, [cart, order, tableId, promoCode]);
 
   const startNewOrder = useCallback(() => {
     setJustPlaced(false);
@@ -149,20 +207,52 @@ export default function MenuApp({ tableId }: { tableId: string }) {
           </div>
         </div>
 
-        {/* Category chips */}
-        <nav className="rail flex gap-2 overflow-x-auto px-5 pb-3" aria-label="Menu categories">
-          <CatChip active={activeCat === "all"} onClick={() => setActiveCat("all")} label={t("all")} />
-          {categories.map((c) => (
-            <CatChip
-              key={c.id}
-              active={activeCat === c.id}
-              onClick={() => setActiveCat(c.id)}
-              label={loc(lang, c.name, c.nameNe)}
+        {/* Search + diet filter */}
+        <div className="flex items-center gap-2 px-5 pb-2.5">
+          <div className="relative flex-1">
+            <Search size={17} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint" />
+            <input
+              type="search"
+              inputMode="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={t("searchPlaceholder")}
+              aria-label={t("searchPlaceholder")}
+              className="h-11 w-full rounded-ctl border border-line bg-surface pl-10 pr-9 text-[15px] text-ink outline-none placeholder:text-ink-faint focus:border-pitch-bright"
             />
-          ))}
-        </nav>
+            {query && (
+              <button
+                type="button"
+                onClick={() => setQuery("")}
+                aria-label={t("clearSearch")}
+                className="absolute right-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-ink-faint hover:text-ink"
+              >
+                <X size={16} />
+              </button>
+            )}
+          </div>
+          <DietFilter value="veg" active={dietFilter === "veg"} onToggle={setDietFilter} label={t("veg")} />
+          <DietFilter value="nonveg" active={dietFilter === "nonveg"} onToggle={setDietFilter} label={t("nonveg")} />
+        </div>
+
+        {/* Category chips — hidden while searching to keep results in focus */}
+        {!searching && (
+          <nav className="rail flex gap-2 overflow-x-auto px-5 pb-3" aria-label="Menu categories">
+            <CatChip active={activeCat === "all"} onClick={() => setActiveCat("all")} label={t("all")} />
+            {categories.map((c) => (
+              <CatChip
+                key={c.id}
+                active={activeCat === c.id}
+                onClick={() => setActiveCat(c.id)}
+                label={loc(lang, c.name, c.nameNe)}
+              />
+            ))}
+          </nav>
+        )}
       </header>
 
+      {!searching && (
+      <>
       <section className="px-5 pt-5" aria-label="Featured menu">
         <div className="relative min-h-56 overflow-hidden rounded-[28px] bg-pitch text-cream shadow-[0_20px_40px_oklch(0.24_0.02_155_/_0.18)]">
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -218,7 +308,7 @@ export default function MenuApp({ tableId }: { tableId: string }) {
             onClick={() => setActiveCat("all")}
             label={t("all")}
             kicker={lang === "ne" ? "सबै आइटम" : "Everything"}
-            photo={assetPath("/food/burger.jpg")}
+            photo={assetPath("/food/burger.webp")}
             tone="bg-pitch"
             count={db.items.length}
           />
@@ -239,6 +329,8 @@ export default function MenuApp({ tableId }: { tableId: string }) {
           })}
         </div>
       </section>
+      </>
+      )}
 
       {/* Live order tracker */}
       {order && (
@@ -249,8 +341,79 @@ export default function MenuApp({ tableId }: { tableId: string }) {
         />
       )}
 
+      {/* Combo deals rail */}
+      {!searching && activeCat === "all" && activeCombos.length > 0 && (
+        <section className="pt-5" aria-label={t("combos")}>
+          <div className="flex items-end justify-between px-5">
+            <h2 className="font-display text-2xl leading-none text-pitch">{t("combos")}</h2>
+            <p className="text-xs font-bold uppercase tracking-widest text-ink-faint">
+              {lang === "ne" ? "बचत गर्नुहोस्" : "Better together"}
+            </p>
+          </div>
+          <div className="rail mt-3 flex gap-3 overflow-x-auto px-5 pb-2">
+            {activeCombos.map((combo) => {
+              const compSum = combo.itemIds.reduce(
+                (n, id) => n + (db.items.find((i) => i.id === id)?.price ?? 0),
+                0,
+              );
+              const save = Math.max(0, compSum - combo.price);
+              return (
+                <div
+                  key={combo.id}
+                  className="group w-56 shrink-0 overflow-hidden rounded-[22px] border border-line bg-surface shadow-lift"
+                >
+                  <div className="relative h-28 overflow-hidden bg-pitch">
+                    {combo.photo && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={combo.photo}
+                        alt=""
+                        width={360}
+                        height={200}
+                        loading="lazy"
+                        className="h-full w-full object-cover"
+                      />
+                    )}
+                    {save > 0 && (
+                      <span className="absolute left-2.5 top-2.5 rounded-full bg-pitch-bright px-2.5 py-1 text-xs font-bold text-cream shadow-lift">
+                        {t("comboSave")} {npr(save)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="p-3">
+                    <p className="font-bold leading-snug">{loc(lang, combo.name, combo.nameNe)}</p>
+                    <p className="mt-0.5 line-clamp-1 text-xs text-ink-soft">
+                      {combo.itemIds
+                        .map((id) => db.items.find((i) => i.id === id)?.name)
+                        .filter(Boolean)
+                        .join(" + ")}
+                    </p>
+                    <div className="mt-2 flex items-center justify-between">
+                      <span className="flex items-baseline gap-1.5">
+                        <span className="price font-display text-lg text-pitch">{npr(combo.price)}</span>
+                        {save > 0 && (
+                          <span className="price text-xs text-ink-faint line-through">{npr(compSum)}</span>
+                        )}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => addCombo(combo)}
+                        aria-label={`${t("addToOrder")} ${combo.name}`}
+                        className="pressable flex h-9 items-center gap-1 rounded-ctl bg-pitch px-3 text-sm font-bold text-cream hover:bg-pitch-deep"
+                      >
+                        <Plus size={15} /> {t("addToOrder")}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
       {/* Player favourites rail */}
-      {activeCat === "all" && popular.length > 0 && (
+      {!searching && activeCat === "all" && popular.length > 0 && (
         <section className="pt-5" aria-label={t("popular")}>
           <div className="flex items-end justify-between px-5">
             <h2 className="font-display text-2xl leading-none text-pitch">{t("popular")}</h2>
@@ -299,25 +462,55 @@ export default function MenuApp({ tableId }: { tableId: string }) {
 
       {/* Menu list */}
       <main className="px-5">
-        {(activeCat === "all" ? categories : categories.filter((c) => c.id === activeCat)).map((cat) => {
-          const items = visibleItems.filter((i) => i.categoryId === cat.id);
-          if (items.length === 0) return null;
-          return (
-            <section key={cat.id} className="pt-7" aria-label={loc(lang, cat.name, cat.nameNe)}>
+        {searching ? (
+          results.length === 0 ? (
+            <div className="pt-12 pb-8 text-center">
+              <p className="font-display text-xl text-pitch">{t("noResults")}</p>
+              <p className="mt-1 text-sm text-ink-soft">{t("noResultsHint")}</p>
+              <button
+                type="button"
+                onClick={clearSearch}
+                className="pressable mt-4 rounded-ctl border border-line bg-surface px-4 py-2.5 text-sm font-bold text-ink-soft hover:text-ink"
+              >
+                {t("clearSearch")}
+              </button>
+            </div>
+          ) : (
+            <section className="pt-6" aria-label={t("searchResults")}>
               <div className="flex items-baseline justify-between">
-                <h2 className="font-display text-2xl text-pitch">{loc(lang, cat.name, cat.nameNe)}</h2>
+                <h2 className="font-display text-2xl text-pitch">{t("searchResults")}</h2>
                 <span className="text-xs font-bold uppercase tracking-widest text-ink-faint">
-                  {items.length} {lang === "ne" ? "आइटम" : "items"}
+                  {results.length} {lang === "ne" ? "आइटम" : "items"}
                 </span>
               </div>
               <ul className="mt-3 space-y-3">
-                {items.map((i) => (
+                {results.map((i) => (
                   <MenuCard key={i.id} item={i} onOpen={() => setOpenItem(i)} />
                 ))}
               </ul>
             </section>
-          );
-        })}
+          )
+        ) : (
+          (activeCat === "all" ? categories : categories.filter((c) => c.id === activeCat)).map((cat) => {
+            const items = visibleItems.filter((i) => i.categoryId === cat.id);
+            if (items.length === 0) return null;
+            return (
+              <section key={cat.id} className="pt-7" aria-label={loc(lang, cat.name, cat.nameNe)}>
+                <div className="flex items-baseline justify-between">
+                  <h2 className="font-display text-2xl text-pitch">{loc(lang, cat.name, cat.nameNe)}</h2>
+                  <span className="text-xs font-bold uppercase tracking-widest text-ink-faint">
+                    {items.length} {lang === "ne" ? "आइटम" : "items"}
+                  </span>
+                </div>
+                <ul className="mt-3 space-y-3">
+                  {items.map((i) => (
+                    <MenuCard key={i.id} item={i} onOpen={() => setOpenItem(i)} />
+                  ))}
+                </ul>
+              </section>
+            );
+          })
+        )}
         <footer className="pt-10 pb-4 text-center text-xs text-ink-faint">
           {db.settings.tagline} · {db.settings.hours}
         </footer>
@@ -351,8 +544,47 @@ export default function MenuApp({ tableId }: { tableId: string }) {
         setCart={setCart}
         onSubmit={submitCart}
         appending={!!(order && isOpen(order))}
+        promoCode={promoCode}
+        setPromoCode={setPromoCode}
       />
     </div>
+  );
+}
+
+function DietFilter({
+  value,
+  active,
+  onToggle,
+  label,
+}: {
+  value: "veg" | "nonveg";
+  active: boolean;
+  onToggle: (v: "all" | "veg" | "nonveg") => void;
+  label: string;
+}) {
+  const color = value === "veg" ? "var(--color-pitch-bright)" : "var(--color-terracotta)";
+  return (
+    <button
+      type="button"
+      onClick={() => onToggle(active ? "all" : value)}
+      aria-pressed={active}
+      aria-label={label}
+      title={label}
+      className={`pressable flex h-11 w-11 shrink-0 items-center justify-center rounded-ctl border ${
+        active ? "border-transparent" : "border-line bg-surface"
+      }`}
+      style={active ? { background: color } : undefined}
+    >
+      <span
+        className="flex h-4 w-4 items-center justify-center rounded-[3px] border-[1.5px]"
+        style={{ borderColor: active ? "var(--color-cream)" : color }}
+      >
+        <span
+          className="h-2 w-2 rounded-full"
+          style={{ background: active ? "var(--color-cream)" : color }}
+        />
+      </span>
+    </button>
   );
 }
 

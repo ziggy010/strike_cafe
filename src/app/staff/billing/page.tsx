@@ -1,11 +1,14 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import QRCode from "qrcode";
 import { Banknote, CheckCircle2, Clock3, Copy, CreditCard, Printer, QrCode, ReceiptText, Search, Share2 } from "lucide-react";
 import { StatusBadge } from "@/components/ui";
 import { getStore } from "@/lib/store";
 import { useDB } from "@/lib/useStore";
 import { clockTime, npr, timeAgo } from "@/lib/format";
+import { orderTotal } from "@/lib/orders";
+import { buildDynamicNepalQr } from "@/lib/nepalQr";
 import type { Order, OrderStatus, Settings } from "@/lib/types";
 
 type BillTab = "unpaid" | "paid";
@@ -23,10 +26,6 @@ const STATUS_LABEL: Record<OrderStatus, string> = {
   served: "Served",
   cancelled: "Cancelled",
 };
-
-function orderTotal(order: Order): number {
-  return order.lines.reduce((sum, line) => sum + line.qty * line.price, 0);
-}
 
 function groupTotal(group: BillGroup): number {
   return group.orders.reduce((sum, order) => sum + orderTotal(order), 0);
@@ -218,6 +217,62 @@ export default function BillingPage() {
   );
 }
 
+function PaymentQr({
+  staticData,
+  amount,
+  remark,
+  billNumber,
+}: {
+  staticData: string;
+  amount: number;
+  remark: string;
+  billNumber: string;
+}) {
+  const payload = useMemo(
+    () => buildDynamicNepalQr(staticData, amount, remark, billNumber),
+    [staticData, amount, remark, billNumber],
+  );
+  // Component is keyed on the payload at the call site, so a fresh mount (src
+  // null) accompanies every amount change — no stale QR for the wrong total.
+  const [src, setSrc] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!payload) return;
+    let cancelled = false;
+    QRCode.toDataURL(payload, { width: 360, margin: 1, color: { dark: "#1f3328", light: "#ffffff" } })
+      .then((url) => {
+        if (!cancelled) setSrc(url);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [payload]);
+
+  if (!staticData) return null;
+
+  if (!payload) {
+    return (
+      <p className="mt-4 rounded-ctl bg-terracotta-soft px-4 py-3 text-sm font-bold text-terracotta">
+        Payment QR isn&apos;t set up correctly — check Settings → Payment QR.
+      </p>
+    );
+  }
+
+  return (
+    <div className="mt-4 flex flex-col items-center gap-2 rounded-card border border-line bg-surface p-4 print:break-inside-avoid">
+      {src && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={src} alt={`Scan to pay ${npr(amount)}`} width={200} height={200} className="h-44 w-44" />
+      )}
+      <p className="text-center text-sm font-bold text-ink">
+        Scan to pay <span className="price font-display text-pitch">{npr(amount)}</span>
+      </p>
+      <p className="text-center text-xs text-ink-faint">eSewa · Khalti · any bank app — {remark}</p>
+    </div>
+  );
+}
+
 function BillDetail({ group }: { group: BillGroup }) {
   const db = useDB();
   const [copied, setCopied] = useState(false);
@@ -379,6 +434,16 @@ function BillDetail({ group }: { group: BillGroup }) {
             <dd className="font-display">{npr(total)}</dd>
           </div>
         </dl>
+
+        {!allPaid && db.settings.paymentQr.enabled && (
+          <PaymentQr
+            key={total}
+            staticData={db.settings.paymentQr.staticData}
+            amount={total}
+            remark={db.settings.cafeName}
+            billNumber={group.orders.map((o) => o.code).join(",")}
+          />
+        )}
 
         {!allPaid ? (
           <div className="mt-5 grid gap-2 sm:grid-cols-2">

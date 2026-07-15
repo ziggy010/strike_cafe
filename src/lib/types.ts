@@ -47,6 +47,12 @@ export interface OrderLine {
   batch: number; // round number; batch > 1 = items added to an open order
 }
 
+/** A promo code applied to an order. Amount is the NPR value taken off. */
+export interface AppliedDiscount {
+  code: string;
+  amount: number;
+}
+
 export interface Order {
   id: string;
   code: string; // short human code shown to customer & kitchen, e.g. "K42"
@@ -61,6 +67,33 @@ export interface Order {
   updatedAt: number;
   statusAt: Partial<Record<OrderStatus, number>>; // timestamps per transition
   feedback: { rating: number; comment: string } | null;
+  discount: AppliedDiscount | null; // applied promo code, if any
+}
+
+/**
+ * A curated bundle sold at a set price. Added to the cart as one line at
+ * `price`, with its component items listed in the kitchen note — so the
+ * kitchen, billing, and totals need no special handling.
+ */
+export interface Combo {
+  id: string;
+  name: string;
+  nameNe: string;
+  photo: string | null;
+  itemIds: string[]; // component menu-item ids (for display + kitchen note)
+  price: number; // bundle price in NPR
+  active: boolean;
+  popular: boolean;
+}
+
+export interface Promo {
+  id: string;
+  code: string; // customer-entered, matched case-insensitively
+  kind: "percent" | "flat";
+  value: number; // percent (0-100) or flat NPR off
+  minSubtotal: number; // 0 = no minimum
+  active: boolean;
+  expiresAt: number | null; // epoch ms; null = no expiry
 }
 
 export interface WaiterCall {
@@ -107,12 +140,20 @@ export interface Settings {
   serviceChargePercent: number;
   soundOn: boolean; // new-order chime in staff panel
   currency: "NPR";
+  /** Payment QR: paste the café's static NepalPay/eSewa merchant QR content to
+   *  auto-generate amount-locked bills. */
+  paymentQr: {
+    enabled: boolean;
+    staticData: string;
+  };
 }
 
 export interface DB {
   version: number;
   categories: Category[];
   items: MenuItem[];
+  combos: Combo[];
+  promos: Promo[];
   tables: CafeTable[];
   orders: Order[];
   calls: WaiterCall[];

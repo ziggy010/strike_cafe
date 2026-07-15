@@ -1,13 +1,24 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import type { DB } from "./types";
+import type { DB, Order } from "./types";
 import { getServerSnapshot, getStore } from "./store";
 
 /** Live view of the whole database; re-renders on any change (local or other tabs). */
 export function useDB(): DB {
   const store = getStore();
   return useSyncExternalStore(store.subscribe, store.getSnapshot, getServerSnapshot);
+}
+
+const EMPTY_ARCHIVE: Order[] = [];
+
+/**
+ * Archived orders (closed, from previous days) — kept out of the synced blob to
+ * keep realtime fast. Only reports need this; the live board reads useDB().
+ */
+export function useArchive(): Order[] {
+  const store = getStore();
+  return useSyncExternalStore(store.subscribe, store.getArchiveSnapshot, () => EMPTY_ARCHIVE);
 }
 
 /**

@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Fraunces, Karla, Mukta } from "next/font/google";
 import { assetPath } from "@/lib/assets";
+import RegisterSW from "@/components/RegisterSW";
 import "./globals.css";
 
 const fraunces = Fraunces({
@@ -48,7 +49,10 @@ export default function RootLayout({
       lang="en"
       className={`${fraunces.variable} ${karla.variable} ${mukta.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        {children}
+        <RegisterSW />
+      </body>
     </html>
   );
 }
