@@ -363,10 +363,12 @@ class Store {
       tombstoneRank,
     );
     const tombstonesById = new Map(orderTombstones.map((tombstone) => [tombstone.id, tombstone]));
-    const orders = mergeById(local.orders, incoming.orders, orderRank).filter((order) => {
+    const mergedOrders = mergeById(local.orders, incoming.orders, orderRank);
+    const orders = mergedOrders.filter((order) => {
       const tombstone = tombstonesById.get(order.id);
       return !tombstone || orderRank(order) > tombstoneRank(tombstone);
     });
+    const tombstonesSuppressedOrders = orders.length < mergedOrders.length;
     const calls = mergeById(local.calls, incoming.calls, callRank);
     const expenses = mergeById(local.expenses, incoming.expenses, expenseRank);
     const localWasAhead =
@@ -387,7 +389,7 @@ class Store {
     if (archived.length > 0) {
       this.pushToArchive(archived);
       this.queueCloudSave(this.db);
-    } else if (localWasAhead || (this.pendingSave && cloudWasAhead)) {
+    } else if (tombstonesSuppressedOrders || localWasAhead || (this.pendingSave && cloudWasAhead)) {
       // A device may have created an order while Supabase was paused or the
       // phone was offline. A cloud update can also arrive while an older local
       // snapshot is still inside the debounce window. Always replace that
