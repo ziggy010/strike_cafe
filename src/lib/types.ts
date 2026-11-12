@@ -74,6 +74,12 @@ export interface Order {
   discount: AppliedDiscount | null; // applied promo code, if any
 }
 
+export interface OrderTombstone {
+  id: string;
+  revision: number;
+  updatedAt: number;
+}
+
 export type ExpenseCategory = "ingredients" | "staff" | "utilities" | "rent" | "maintenance" | "other";
 
 export interface Expense {
@@ -174,6 +180,7 @@ export interface DB {
   promos: Promo[];
   tables: CafeTable[];
   orders: Order[];
+  orderTombstones: OrderTombstone[];
   calls: WaiterCall[];
   staff: StaffUser[];
   inventory: InventoryItem[];

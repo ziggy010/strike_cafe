@@ -13,6 +13,7 @@ import type {
   Order,
   OrderLine,
   OrderStatus,
+  OrderTombstone,
   Promo,
   Settings,
   StaffUser,
@@ -91,6 +92,14 @@ function hasLocalAhead<T extends { id: string }>(
   });
 }
 
+function orderRank(order: Order): number {
+  return (order.revision ?? 0) * 10_000_000_000_000 + order.updatedAt;
+}
+
+function tombstoneRank(tombstone: OrderTombstone): number {
+  return tombstone.revision * 10_000_000_000_000 + tombstone.updatedAt;
+}
+
 /**
  * Browser data store.
  *
@@ -162,6 +171,7 @@ class Store {
     if (!db.settings) db.settings = seed.settings;
     db.settings.paymentQr ??= seed.settings.paymentQr;
     if (!Array.isArray(db.orders)) db.orders = [];
+    if (!Array.isArray(db.orderTombstones)) db.orderTombstones = [];
     if (!Array.isArray(db.calls)) db.calls = [];
     if (!Array.isArray(db.inventoryLogs)) db.inventoryLogs = [];
     if (!Array.isArray(db.expenses)) db.expenses = [];
@@ -174,12 +184,13 @@ class Store {
       o.paidAt ??= o.paid ? o.updatedAt : null;
       o.paidAmount ??= o.paid ? orderGrandTotal(o, db.settings) : null;
       o.paidBy ??= null;
-      // An unpaid kitchen ticket cannot still be active a full day later. Keep
-      // it in history as cancelled instead of reviving it on every new device.
-      if (isOpen(o) && !o.paid && o.placedAt < Date.now() - STALE_OPEN_ORDER_MS) {
+      // A kitchen ticket cannot still be active a full day later. Preserve it
+      // in history: paid tickets close as served, unpaid tickets as cancelled.
+      if (isOpen(o) && o.placedAt < Date.now() - STALE_OPEN_ORDER_MS) {
         const closedAt = Date.now();
-        o.status = "cancelled";
-        o.statusAt.cancelled ??= closedAt;
+        const finalStatus: OrderStatus = o.paid ? "served" : "cancelled";
+        o.status = finalStatus;
+        o.statusAt[finalStatus] ??= closedAt;
         o.updatedAt = Math.max(closedAt, o.updatedAt + 1);
         o.revision += 1;
       }
@@ -230,6 +241,19 @@ class Store {
     const cutoff = startOfToday();
     const archivable = db.orders.filter((o) => !isOpen(o) && o.placedAt < cutoff);
     if (archivable.length > 0) {
+      const tombstones = new Map(db.orderTombstones.map((tombstone) => [tombstone.id, tombstone]));
+      for (const order of archivable) {
+        const next = {
+          id: order.id,
+          revision: order.revision ?? 0,
+          updatedAt: order.updatedAt,
+        };
+        const current = tombstones.get(order.id);
+        if (!current || tombstoneRank(next) >= tombstoneRank(current)) tombstones.set(order.id, next);
+      }
+      db.orderTombstones = [...tombstones.values()]
+        .sort((a, b) => b.updatedAt - a.updatedAt)
+        .slice(0, ARCHIVE_CAP);
       const ids = new Set(archivable.map((o) => o.id));
       db.orders = db.orders.filter((o) => !ids.has(o.id));
     }
@@ -330,25 +354,33 @@ class Store {
    */
   private applyIncoming(incoming: DB): void {
     const local = this.db;
-    // Revision is authoritative across devices; timestamp breaks ties between
-    // older clients that have not received revision support yet.
-    const orderRank = (order: Order) => (order.revision ?? 0) * 10_000_000_000_000 + order.updatedAt;
     const callRank = (call: DB["calls"][number]) =>
       Math.max(call.createdAt, call.acceptedAt ?? 0, call.resolvedAt ?? 0);
     const expenseRank = (expense: Expense) => expense.updatedAt;
-    const orders = mergeById(local.orders, incoming.orders, orderRank);
+    const orderTombstones = mergeById(
+      local.orderTombstones,
+      incoming.orderTombstones,
+      tombstoneRank,
+    );
+    const tombstonesById = new Map(orderTombstones.map((tombstone) => [tombstone.id, tombstone]));
+    const orders = mergeById(local.orders, incoming.orders, orderRank).filter((order) => {
+      const tombstone = tombstonesById.get(order.id);
+      return !tombstone || orderRank(order) > tombstoneRank(tombstone);
+    });
     const calls = mergeById(local.calls, incoming.calls, callRank);
     const expenses = mergeById(local.expenses, incoming.expenses, expenseRank);
     const localWasAhead =
       hasLocalAhead(orders, incoming.orders, orderRank) ||
+      hasLocalAhead(orderTombstones, incoming.orderTombstones, tombstoneRank) ||
       hasLocalAhead(calls, incoming.calls, callRank) ||
       hasLocalAhead(expenses, incoming.expenses, expenseRank);
     const cloudWasAhead =
       hasLocalAhead(orders, local.orders, orderRank) ||
+      hasLocalAhead(orderTombstones, local.orderTombstones, tombstoneRank) ||
       hasLocalAhead(calls, local.calls, callRank) ||
       hasLocalAhead(expenses, local.expenses, expenseRank);
     const base = this.pendingSave ? local : incoming;
-    this.db = { ...base, orders, calls, expenses };
+    this.db = { ...base, orders, orderTombstones, calls, expenses };
 
     const archived = this.extractArchivable(this.db);
     this.persistLocal(this.db);

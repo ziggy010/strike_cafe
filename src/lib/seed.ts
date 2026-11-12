@@ -168,6 +168,7 @@ export function seedDB(): DB {
       { id: "t-8", label: "Terrace", active: true },
     ],
     orders: [],
+    orderTombstones: [],
     calls: [],
     staff: [
       { id: "u-owner", name: "Owner", role: "admin", pin: "1234" },
