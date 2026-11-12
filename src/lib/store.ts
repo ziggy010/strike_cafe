@@ -77,6 +77,19 @@ function mergeById<T extends { id: string }>(local: T[], incoming: T[], rank: (x
   return [...m.values()];
 }
 
+/** True when reconciliation kept a local record that the cloud still lacks. */
+function hasLocalAhead<T extends { id: string }>(
+  merged: T[],
+  incoming: T[],
+  rank: (x: T) => number,
+): boolean {
+  const cloud = new Map(incoming.map((record) => [record.id, record]));
+  return merged.some((record) => {
+    const cloudRecord = cloud.get(record.id);
+    return !cloudRecord || rank(record) > rank(cloudRecord);
+  });
+}
+
 /**
  * Browser data store.
  *
@@ -306,11 +319,17 @@ class Store {
    */
   private applyIncoming(incoming: DB): void {
     const local = this.db;
-    const orders = mergeById(local.orders, incoming.orders, (o) => o.updatedAt);
-    const calls = mergeById(local.calls, incoming.calls, (c) =>
-      Math.max(c.createdAt, c.acceptedAt ?? 0, c.resolvedAt ?? 0),
-    );
-    const expenses = mergeById(local.expenses, incoming.expenses, (e) => e.updatedAt);
+    const orderRank = (order: Order) => order.updatedAt;
+    const callRank = (call: DB["calls"][number]) =>
+      Math.max(call.createdAt, call.acceptedAt ?? 0, call.resolvedAt ?? 0);
+    const expenseRank = (expense: Expense) => expense.updatedAt;
+    const orders = mergeById(local.orders, incoming.orders, orderRank);
+    const calls = mergeById(local.calls, incoming.calls, callRank);
+    const expenses = mergeById(local.expenses, incoming.expenses, expenseRank);
+    const localWasAhead =
+      hasLocalAhead(orders, incoming.orders, orderRank) ||
+      hasLocalAhead(calls, incoming.calls, callRank) ||
+      hasLocalAhead(expenses, incoming.expenses, expenseRank);
     const base = this.pendingSave ? local : incoming;
     this.db = { ...base, orders, calls, expenses };
 
@@ -318,6 +337,11 @@ class Store {
     this.persistLocal(this.db);
     if (archived.length > 0) {
       this.pushToArchive(archived);
+      this.queueCloudSave(this.db);
+    } else if (localWasAhead) {
+      // A device may have created an order while Supabase was paused or the
+      // phone was offline. Persist the merged snapshot as soon as cloud access
+      // returns so other devices receive those locally queued records.
       this.queueCloudSave(this.db);
     }
     this.emit();
