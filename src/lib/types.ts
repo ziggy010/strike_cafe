@@ -72,6 +72,7 @@ export interface Order {
   statusAt: Partial<Record<OrderStatus, number>>; // timestamps per transition
   feedback: { rating: number; comment: string } | null;
   discount: AppliedDiscount | null; // applied promo code, if any
+  counterDiscount: AppliedDiscount | null; // discretionary discount applied at billing
 }
 
 export interface OrderTombstone {

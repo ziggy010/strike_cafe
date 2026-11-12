@@ -250,6 +250,12 @@ function OrderCard({ order, tableLabel, userId }: { order: Order; tableLabel: st
               </span>
             </div>
           )}
+          {order.counterDiscount && (
+            <div className="price mt-2 flex items-center justify-between border-t border-line-soft pt-2 text-sm">
+              <span className="font-bold text-pitch">Bill discount</span>
+              <span className="text-ink-soft">−{npr(order.counterDiscount.amount)}</span>
+            </div>
+          )}
 
           <div className="mt-3.5 flex flex-wrap items-center gap-2">
             {next && (

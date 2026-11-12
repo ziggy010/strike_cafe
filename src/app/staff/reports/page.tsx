@@ -21,7 +21,7 @@ import { getStore } from "@/lib/store";
 import { useArchive, useDB } from "@/lib/useStore";
 import { clockTime, npr } from "@/lib/format";
 import { orderGrandTotal } from "@/lib/orders";
-import type { ExpenseCategory, Order, Settings } from "@/lib/types";
+import type { AppliedDiscount, ExpenseCategory, Order, Settings } from "@/lib/types";
 
 type Period = "today" | "week" | "month";
 type EntryFilter = "all" | "income" | "expense";
@@ -42,7 +42,7 @@ type LedgerEntry = {
     note: string;
     batch: number;
   }[];
-  discount?: { code: string; amount: number } | null;
+  discounts?: AppliedDiscount[];
   expenseId?: string;
 };
 
@@ -152,7 +152,9 @@ export default function ReportsPage() {
           note: line.note,
           batch: line.batch,
         })),
-        discount: order.discount,
+        discounts: [order.discount, order.counterDiscount].filter(
+          (discount): discount is AppliedDiscount => discount !== null,
+        ),
       };
     }),
     ...expenses.map((expense) => ({
@@ -405,12 +407,12 @@ export default function ReportsPage() {
                               </li>
                             ))}
                           </ul>
-                          {entry.discount && (
-                            <div className="flex items-center justify-between gap-4 border-t border-line-soft py-2 text-sm text-pitch">
-                              <span className="font-bold">Promo {entry.discount.code}</span>
-                              <span className="price">−{npr(entry.discount.amount)}</span>
+                          {entry.discounts?.map((discount) => (
+                            <div key={discount.code} className="flex items-center justify-between gap-4 border-t border-line-soft py-2 text-sm text-pitch">
+                              <span className="font-bold">{discount.code.startsWith("COUNTER") ? "Bill discount" : `Promo ${discount.code}`}</span>
+                              <span className="price">−{npr(discount.amount)}</span>
                             </div>
-                          )}
+                          ))}
                           <div className="flex items-center justify-between gap-4 border-t border-line pt-2.5">
                             <span className="text-sm font-bold text-ink-soft">Amount collected</span>
                             <span className="price font-display text-lg text-pitch">{npr(entry.amount)}</span>

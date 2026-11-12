@@ -5,9 +5,12 @@ export function linesSubtotal(lines: Pick<OrderLine, "qty" | "price">[]): number
   return lines.reduce((n, l) => n + l.qty * l.price, 0);
 }
 
-/** What the customer actually pays: subtotal minus an applied promo. */
+/** What the customer actually pays: subtotal minus promo and counter discounts. */
 export function orderTotal(order: Order): number {
-  return Math.max(0, linesSubtotal(order.lines) - (order.discount?.amount ?? 0));
+  return Math.max(
+    0,
+    linesSubtotal(order.lines) - (order.discount?.amount ?? 0) - (order.counterDiscount?.amount ?? 0),
+  );
 }
 
 /** Final amount collected after configured service charge and VAT. */

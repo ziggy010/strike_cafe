@@ -21,7 +21,7 @@ import type {
   Category,
 } from "./types";
 import { isOpen } from "./types";
-import { orderGrandTotal, promoDiscount } from "./orders";
+import { linesSubtotal, orderGrandTotal, promoDiscount } from "./orders";
 import { seedDB } from "./seed";
 
 const LS_KEY = "strike-yard-db-v1";
@@ -180,6 +180,7 @@ class Store {
     if (!Array.isArray(db.promos)) db.promos = seed.promos;
     db.orders.forEach((o) => {
       o.discount ??= null;
+      o.counterDiscount ??= null;
       o.revision ??= 0;
       o.paidAt ??= o.paid ? o.updatedAt : null;
       o.paidAmount ??= o.paid ? orderGrandTotal(o, db.settings) : null;
@@ -522,6 +523,7 @@ class Store {
       statusAt: { received: Date.now() },
       feedback: null,
       discount,
+      counterDiscount: null,
     };
     this.mutate((db) => db.orders.push(placed));
     return placed;
@@ -569,6 +571,41 @@ class Store {
       o.updatedAt = Date.now();
       o.revision = (o.revision ?? 0) + 1;
       if (status === "served" && byUserId) o.servedBy = byUserId;
+    });
+  }
+
+  removeOrderLine(orderId: string, lineIndex: number): void {
+    this.mutate((db) => {
+      const order = db.orders.find((candidate) => candidate.id === orderId);
+      if (!order || order.paid || lineIndex < 0 || lineIndex >= order.lines.length) return;
+      order.lines.splice(lineIndex, 1);
+      const maxCounterDiscount = Math.max(
+        0,
+        linesSubtotal(order.lines) - (order.discount?.amount ?? 0),
+      );
+      if (order.counterDiscount) {
+        order.counterDiscount.amount = Math.min(order.counterDiscount.amount, maxCounterDiscount);
+        if (order.counterDiscount.amount === 0) order.counterDiscount = null;
+      }
+      const now = Date.now();
+      if (order.lines.length === 0) {
+        order.status = "cancelled";
+        order.statusAt.cancelled = now;
+      }
+      order.updatedAt = now;
+      order.revision = (order.revision ?? 0) + 1;
+    });
+  }
+
+  setCounterDiscount(orderId: string, discount: AppliedDiscount | null): void {
+    this.mutate((db) => {
+      const order = db.orders.find((candidate) => candidate.id === orderId);
+      if (!order || order.paid) return;
+      const available = Math.max(0, linesSubtotal(order.lines) - (order.discount?.amount ?? 0));
+      const amount = discount ? Math.min(Math.max(0, Math.round(discount.amount)), available) : 0;
+      order.counterDiscount = discount && amount > 0 ? { code: discount.code, amount } : null;
+      order.updatedAt = Date.now();
+      order.revision = (order.revision ?? 0) + 1;
     });
   }
 
