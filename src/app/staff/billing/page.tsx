@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import QRCode from "qrcode";
 import { Banknote, CheckCircle2, Clock3, Copy, CreditCard, Printer, QrCode, ReceiptText, Search, Share2 } from "lucide-react";
+import { useStaff } from "@/components/staff/StaffShell";
 import { StatusBadge } from "@/components/ui";
 import { getStore } from "@/lib/store";
 import { useDB } from "@/lib/useStore";
@@ -275,6 +276,7 @@ function PaymentQr({
 
 function BillDetail({ group }: { group: BillGroup }) {
   const db = useDB();
+  const user = useStaff();
   const [copied, setCopied] = useState(false);
   const subtotal = groupTotal(group);
   const vat = Math.round((subtotal * db.settings.vatPercent) / 100);
@@ -288,7 +290,20 @@ function BillDetail({ group }: { group: BillGroup }) {
   const store = getStore();
   const canShare = typeof navigator !== "undefined" && "share" in navigator;
   const markGroupPaid = (method: "cash" | "counter-qr") => {
-    group.orders.filter((order) => !order.paid).forEach((order) => store.markPaid(order.id, method));
+    const unpaid = group.orders.filter((order) => !order.paid);
+    const unpaidSubtotal = unpaid.reduce((sum, order) => sum + orderTotal(order), 0);
+    const unpaidService = Math.round((unpaidSubtotal * db.settings.serviceChargePercent) / 100);
+    const unpaidVat = Math.round((unpaidSubtotal * db.settings.vatPercent) / 100);
+    const amountToAllocate = unpaidSubtotal + unpaidService + unpaidVat;
+    let allocated = 0;
+
+    unpaid.forEach((order, index) => {
+      const orderAmount = index === unpaid.length - 1
+        ? amountToAllocate - allocated
+        : Math.round((orderTotal(order) / Math.max(1, unpaidSubtotal)) * amountToAllocate);
+      allocated += orderAmount;
+      store.markPaid(order.id, method, user.id, orderAmount);
+    });
   };
   const receiptText = buildReceiptText(group, db.settings);
 

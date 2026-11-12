@@ -5,6 +5,8 @@
 -- Current build uses this compact shared state row for realtime cross-device
 -- sync. It keeps the static site simple: customer phones and staff phones all
 -- read/write the same JSON document from the browser.
+-- Owner-entered expenses are stored in this JSON document and merged by ID;
+-- paid-order revenue is derived from orders and is never duplicated.
 --
 -- IMPORTANT: this row holds only TODAY's + still-open orders. Closed past-day
 -- orders are moved to order_archive (below) so this document stays small and

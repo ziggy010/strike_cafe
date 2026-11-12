@@ -62,12 +62,29 @@ export interface Order {
   batches: number;
   paid: boolean;
   paymentMethod: "cash" | "counter-qr" | null;
+  paidAt: number | null;
+  paidAmount: number | null; // locked at collection time so later settings edits do not rewrite history
+  paidBy: string | null;
   servedBy: string | null; // staff user id who served/closed it
   placedAt: number;
   updatedAt: number;
   statusAt: Partial<Record<OrderStatus, number>>; // timestamps per transition
   feedback: { rating: number; comment: string } | null;
   discount: AppliedDiscount | null; // applied promo code, if any
+}
+
+export type ExpenseCategory = "ingredients" | "staff" | "utilities" | "rent" | "maintenance" | "other";
+
+export interface Expense {
+  id: string;
+  category: ExpenseCategory;
+  amount: number;
+  note: string;
+  paymentMethod: "cash" | "bank";
+  occurredAt: number;
+  createdAt: number;
+  updatedAt: number;
+  recordedBy: string;
 }
 
 /**
@@ -160,6 +177,7 @@ export interface DB {
   staff: StaffUser[];
   inventory: InventoryItem[];
   inventoryLogs: InventoryLog[];
+  expenses: Expense[];
   settings: Settings;
 }
 

@@ -6,6 +6,8 @@ import type {
   Combo,
   DB,
   Diet,
+  Expense,
+  ExpenseCategory,
   InventoryItem,
   MenuItem,
   Order,
@@ -18,7 +20,7 @@ import type {
   Category,
 } from "./types";
 import { isOpen } from "./types";
-import { promoDiscount } from "./orders";
+import { orderGrandTotal, promoDiscount } from "./orders";
 import { seedDB } from "./seed";
 
 const LS_KEY = "strike-yard-db-v1";
@@ -148,11 +150,15 @@ class Store {
     if (!Array.isArray(db.orders)) db.orders = [];
     if (!Array.isArray(db.calls)) db.calls = [];
     if (!Array.isArray(db.inventoryLogs)) db.inventoryLogs = [];
+    if (!Array.isArray(db.expenses)) db.expenses = [];
     // Combos & promos added in a later version; seed them for existing installs.
     if (!Array.isArray(db.combos)) db.combos = seed.combos;
     if (!Array.isArray(db.promos)) db.promos = seed.promos;
     db.orders.forEach((o) => {
       o.discount ??= null;
+      o.paidAt ??= o.paid ? o.updatedAt : null;
+      o.paidAmount ??= o.paid ? orderGrandTotal(o, db.settings) : null;
+      o.paidBy ??= null;
     });
     db.calls.forEach((call) => {
       call.acceptedAt ??= null;
@@ -304,8 +310,9 @@ class Store {
     const calls = mergeById(local.calls, incoming.calls, (c) =>
       Math.max(c.createdAt, c.acceptedAt ?? 0, c.resolvedAt ?? 0),
     );
+    const expenses = mergeById(local.expenses, incoming.expenses, (e) => e.updatedAt);
     const base = this.pendingSave ? local : incoming;
-    this.db = { ...base, orders, calls };
+    this.db = { ...base, orders, calls, expenses };
 
     const archived = this.extractArchivable(this.db);
     this.persistLocal(this.db);
@@ -429,6 +436,9 @@ class Store {
       batches: 1,
       paid: false,
       paymentMethod: null,
+      paidAt: null,
+      paidAmount: null,
+      paidBy: null,
       servedBy: null,
       placedAt: Date.now(),
       updatedAt: Date.now(),
@@ -483,13 +493,48 @@ class Store {
     });
   }
 
-  markPaid(orderId: string, method: "cash" | "counter-qr"): void {
+  markPaid(orderId: string, method: "cash" | "counter-qr", byUserId?: string, amount?: number): void {
     this.mutate((db) => {
       const o = db.orders.find((x) => x.id === orderId);
       if (!o) return;
       o.paid = true;
       o.paymentMethod = method;
-      o.updatedAt = Date.now();
+      o.paidAt = Date.now();
+      o.paidAmount = amount ?? orderGrandTotal(o, db.settings);
+      o.paidBy = byUserId ?? null;
+      o.updatedAt = o.paidAt;
+    });
+  }
+
+  // ---- Owner ledger ----
+
+  addExpense(input: {
+    category: ExpenseCategory;
+    amount: number;
+    note: string;
+    paymentMethod: Expense["paymentMethod"];
+    occurredAt: number;
+    recordedBy: string;
+  }): void {
+    this.mutate((db) => {
+      const now = Date.now();
+      db.expenses.push({
+        id: uid(),
+        category: input.category,
+        amount: Math.round(Math.max(0, input.amount)),
+        note: input.note.trim(),
+        paymentMethod: input.paymentMethod,
+        occurredAt: input.occurredAt,
+        createdAt: now,
+        updatedAt: now,
+        recordedBy: input.recordedBy,
+      });
+    });
+  }
+
+  deleteExpense(expenseId: string): void {
+    this.mutate((db) => {
+      db.expenses = db.expenses.filter((expense) => expense.id !== expenseId);
     });
   }
 

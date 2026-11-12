@@ -1,316 +1,428 @@
 "use client";
 
 import { useState } from "react";
-import { Banknote, Download, QrCode, ReceiptText, TrendingUp } from "lucide-react";
+import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  Banknote,
+  CalendarDays,
+  Download,
+  Plus,
+  QrCode,
+  ReceiptText,
+  Trash2,
+  TrendingUp,
+  WalletCards,
+  X,
+} from "lucide-react";
+import { useStaff } from "@/components/staff/StaffShell";
+import { getStore } from "@/lib/store";
 import { useArchive, useDB } from "@/lib/useStore";
-import { npr } from "@/lib/format";
-import { linesSubtotal, orderTotal } from "@/lib/orders";
+import { clockTime, npr } from "@/lib/format";
+import { orderGrandTotal } from "@/lib/orders";
+import type { ExpenseCategory, Order, Settings } from "@/lib/types";
 
-type Period = "today" | "7d" | "30d";
+type Period = "today" | "week" | "month";
+type EntryFilter = "all" | "income" | "expense";
+
+type LedgerEntry = {
+  id: string;
+  kind: "income" | "expense";
+  at: number;
+  title: string;
+  detail: string;
+  method: string;
+  amount: number;
+  expenseId?: string;
+};
+
+const EXPENSE_CATEGORIES: { value: ExpenseCategory; label: string }[] = [
+  { value: "ingredients", label: "Ingredients" },
+  { value: "staff", label: "Staff" },
+  { value: "utilities", label: "Utilities" },
+  { value: "rent", label: "Rent" },
+  { value: "maintenance", label: "Maintenance" },
+  { value: "other", label: "Other" },
+];
+
+const PERIOD_LABEL: Record<Period, string> = {
+  today: "Today",
+  week: "This week",
+  month: "This month",
+};
+
+function periodStart(period: Period): number {
+  const date = new Date();
+  date.setHours(0, 0, 0, 0);
+  if (period === "week") {
+    const day = date.getDay();
+    date.setDate(date.getDate() - (day === 0 ? 6 : day - 1));
+  }
+  if (period === "month") date.setDate(1);
+  return date.getTime();
+}
+
+function localDateInputValue(date = new Date()): string {
+  const offset = date.getTimezoneOffset();
+  return new Date(date.getTime() - offset * 60000).toISOString().slice(0, 10);
+}
+
+function collectedAmount(order: Order, settings: Settings): number {
+  return order.paidAmount ?? orderGrandTotal(order, settings);
+}
+
+function entryDateLabel(at: number, period: Period): string {
+  if (period === "today") return clockTime(at);
+  const date = new Intl.DateTimeFormat("en-NP", { month: "short", day: "numeric" }).format(at);
+  return `${date} · ${clockTime(at)}`;
+}
 
 export default function ReportsPage() {
   const db = useDB();
   const archive = useArchive();
+  const user = useStaff();
   const [period, setPeriod] = useState<Period>("today");
+  const [entryFilter, setEntryFilter] = useState<EntryFilter>("all");
+  const [showExpenseForm, setShowExpenseForm] = useState(false);
+  const [category, setCategory] = useState<ExpenseCategory>("ingredients");
+  const [amount, setAmount] = useState("");
+  const [note, setNote] = useState("");
+  const [expenseMethod, setExpenseMethod] = useState<"cash" | "bank">("cash");
+  const [expenseDate, setExpenseDate] = useState(localDateInputValue);
 
-  const sinceDate = new Date();
-  sinceDate.setHours(0, 0, 0, 0);
-  if (period === "7d") sinceDate.setDate(sinceDate.getDate() - 6);
-  if (period === "30d") sinceDate.setDate(sinceDate.getDate() - 29);
-  const since = sinceDate.getTime();
-
-  // Live board holds today's + still-open orders; archive holds closed past-day
-  // orders. They're disjoint, so a plain concat is safe.
+  const since = periodStart(period);
   const allOrders = period === "today" ? db.orders : [...db.orders, ...archive];
+  const paidOrders = allOrders.filter((order) => order.paid && (order.paidAt ?? order.updatedAt) >= since);
+  const expenses = db.expenses.filter((expense) => expense.occurredAt >= since);
+  const servedUnpaid = allOrders.filter(
+    (order) => order.status === "served" && !order.paid && order.placedAt >= since,
+  );
 
-  // Revenue counts served orders; cancelled are tracked separately.
-  const orders = allOrders.filter((o) => o.placedAt >= since && o.status !== "cancelled");
-  const served = orders.filter((o) => o.status === "served");
-  const cancelled = allOrders.filter((o) => o.placedAt >= since && o.status === "cancelled");
+  const income = paidOrders.reduce((total, order) => total + collectedAmount(order, db.settings), 0);
+  const expenseTotal = expenses.reduce((total, expense) => total + expense.amount, 0);
+  const balance = income - expenseTotal;
+  const outstanding = servedUnpaid.reduce((total, order) => total + orderGrandTotal(order, db.settings), 0);
+  const cashIncome = paidOrders
+    .filter((order) => order.paymentMethod === "cash")
+    .reduce((total, order) => total + collectedAmount(order, db.settings), 0);
+  const qrIncome = paidOrders
+    .filter((order) => order.paymentMethod === "counter-qr")
+    .reduce((total, order) => total + collectedAmount(order, db.settings), 0);
 
-  const revenue = served.reduce((n, o) => n + orderTotal(o), 0);
-  const grossSales = served.reduce((n, o) => n + linesSubtotal(o.lines), 0);
-  const discountsGiven = served.reduce((n, o) => n + (o.discount?.amount ?? 0), 0);
-  const avgTicket = served.length ? Math.round(revenue / served.length) : 0;
-  const paidServed = served.filter((o) => o.paid);
-  const unpaidServed = served.filter((o) => !o.paid);
-  const cashRevenue = paidServed.filter((o) => o.paymentMethod === "cash").reduce((n, o) => n + orderTotal(o), 0);
-  const qrRevenue = paidServed.filter((o) => o.paymentMethod === "counter-qr").reduce((n, o) => n + orderTotal(o), 0);
-  const uncollectedServed = unpaidServed.reduce((n, o) => n + orderTotal(o), 0);
-  const ratings = served.filter((o) => o.feedback).map((o) => o.feedback!.rating);
-  const avgRating = ratings.length ? (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1) : null;
+  const itemSales = new Map<string, { name: string; qty: number; revenue: number }>();
+  paidOrders.forEach((order) => {
+    order.lines.forEach((line) => {
+      const current = itemSales.get(line.itemId) ?? { name: line.name, qty: 0, revenue: 0 };
+      current.qty += line.qty;
+      current.revenue += line.qty * line.price;
+      itemSales.set(line.itemId, current);
+    });
+  });
+  const bestSellers = [...itemSales.values()].sort((a, b) => b.qty - a.qty || b.revenue - a.revenue).slice(0, 5);
+  const topQuantity = Math.max(1, ...bestSellers.map((item) => item.qty));
 
-  // Best sellers
-  const salesMap = new Map<string, { name: string; qty: number; revenue: number }>();
-  for (const o of served) {
-    for (const l of o.lines) {
-      const e = salesMap.get(l.itemId) ?? { name: l.name, qty: 0, revenue: 0 };
-      e.qty += l.qty;
-      e.revenue += l.qty * l.price;
-      salesMap.set(l.itemId, e);
-    }
-  }
-  const bySales = [...salesMap.values()].sort((a, b) => b.revenue - a.revenue).slice(0, 8);
+  const entries: LedgerEntry[] = [
+    ...paidOrders.map((order) => {
+      const table = db.tables.find((item) => item.id === order.tableId)?.label ?? "Unknown table";
+      const collector = db.staff.find((staff) => staff.id === order.paidBy)?.name;
+      return {
+        id: `order-${order.id}`,
+        kind: "income" as const,
+        at: order.paidAt ?? order.updatedAt,
+        title: `Order ${order.code}`,
+        detail: `${table} · ${order.lines.reduce((sum, line) => sum + line.qty, 0)} items${collector ? ` · ${collector}` : ""}`,
+        method: order.paymentMethod === "counter-qr" ? "Counter QR" : "Cash",
+        amount: collectedAmount(order, db.settings),
+      };
+    }),
+    ...expenses.map((expense) => ({
+      id: `expense-${expense.id}`,
+      kind: "expense" as const,
+      at: expense.occurredAt,
+      title: expense.note || EXPENSE_CATEGORIES.find((item) => item.value === expense.category)?.label || "Expense",
+      detail: `${EXPENSE_CATEGORIES.find((item) => item.value === expense.category)?.label ?? "Other"} · ${expense.recordedBy}`,
+      method: expense.paymentMethod === "bank" ? "Bank / QR" : "Cash",
+      amount: expense.amount,
+      expenseId: expense.id,
+    })),
+  ].sort((a, b) => b.at - a.at);
 
-  // Revenue by category
-  const itemCat = new Map(db.items.map((i) => [i.id, i.categoryId]));
-  const catName = new Map(db.categories.map((c) => [c.id, c.name]));
-  const catMap = new Map<string, number>();
-  for (const o of served) {
-    for (const l of o.lines) {
-      const name = catName.get(itemCat.get(l.itemId) ?? "") ?? "Other";
-      catMap.set(name, (catMap.get(name) ?? 0) + l.qty * l.price);
-    }
-  }
-  const byCategory = [...catMap.entries()].sort((a, b) => b[1] - a[1]);
+  const visibleEntries = entries.filter((entry) => entryFilter === "all" || entry.kind === entryFilter);
 
-  // Peak hours (order placement counts, open + served)
-  const byHour = Array.from({ length: 15 }, (_, i) => i + 7).map((h) => ({
-    hour: h,
-    count: orders.filter((o) => new Date(o.placedAt).getHours() === h).length,
-    revenue: served.filter((o) => new Date(o.placedAt).getHours() === h).reduce((n, o) => n + orderTotal(o), 0),
-  })); // 7:00–21:00
-  const peakHour = byHour.reduce((best, cur) => (cur.count > best.count ? cur : best), byHour[0]);
-  const completionRate = orders.length ? Math.round((served.length / orders.length) * 100) : 0;
+  const addExpense = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const value = Number(amount);
+    if (!Number.isFinite(value) || value <= 0 || !note.trim()) return;
+    const selected = new Date(`${expenseDate}T12:00:00`);
+    getStore().addExpense({
+      category,
+      amount: value,
+      note,
+      paymentMethod: expenseMethod,
+      occurredAt: selected.getTime(),
+      recordedBy: user.name,
+    });
+    setAmount("");
+    setNote("");
+    setExpenseDate(localDateInputValue());
+    setShowExpenseForm(false);
+  };
 
-  // Staff performance: orders served/closed per staff member
-  const staffMap = new Map<string, number>();
-  for (const o of served) {
-    if (o.servedBy) staffMap.set(o.servedBy, (staffMap.get(o.servedBy) ?? 0) + 1);
-  }
-  const byStaff = [...staffMap.entries()]
-    .map(([id, count]) => ({ name: db.staff.find((u) => u.id === id)?.name ?? "Former staff", count }))
-    .sort((a, b) => b.count - a.count);
-
-  const exportCSV = () => {
+  const exportLedger = () => {
     const rows = [
-      ["code", "table", "placed_at", "status", "paid", "payment_method", "items", "gross_npr", "discount_code", "discount_npr", "net_npr", "rating"],
-      ...allOrders
-        .filter((o) => o.placedAt >= since)
-        .map((o) => [
-          o.code,
-          db.tables.find((t) => t.id === o.tableId)?.label ?? "?",
-          new Date(o.placedAt).toISOString(),
-          o.status,
-          o.paid ? "yes" : "no",
-          o.paymentMethod ?? "",
-          o.lines.map((l) => `${l.qty}x ${l.name}`).join("; "),
-          String(linesSubtotal(o.lines)),
-          o.discount?.code ?? "",
-          String(o.discount?.amount ?? 0),
-          String(orderTotal(o)),
-          o.feedback ? String(o.feedback.rating) : "",
-        ]),
+      ["date", "type", "description", "detail", "payment_method", "amount_npr"],
+      ...entries.map((entry) => [
+        new Date(entry.at).toISOString(),
+        entry.kind,
+        entry.title,
+        entry.detail,
+        entry.method,
+        String(entry.kind === "expense" ? -entry.amount : entry.amount),
+      ]),
     ];
-    const csv = rows.map((r) => r.map((c) => `"${String(c).replaceAll('"', '""')}"`).join(",")).join("\n");
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
-    a.download = `strike-yard-orders-${period}.csv`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    const csv = rows.map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(",")).join("\n");
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    link.download = `strike-yard-ledger-${period}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
   };
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 py-6 lg:px-8">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="mx-auto w-full max-w-6xl px-4 py-5 lg:px-8 lg:py-7">
+      <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="font-display text-2xl text-pitch">Reports</h1>
-          <p className="mt-1 text-sm text-ink-soft">
-            {period === "today" ? "Today" : period === "7d" ? "Last 7 days" : "Last 30 days"} closeout, sales, payments, and menu performance.
+          <div className="flex items-center gap-2 text-pitch">
+            <WalletCards size={20} />
+            <p className="text-xs font-bold uppercase tracking-[0.16em]">Owner view</p>
+          </div>
+          <h1 className="mt-1 font-display text-3xl text-pitch">Cafe ledger</h1>
+          <p className="mt-1 max-w-xl text-sm text-ink-soft">
+            Payments become income automatically. Add operating costs here to see the cafe&apos;s real balance.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="flex rounded-ctl border border-line bg-surface p-0.5 text-sm font-bold">
-            {(
-              [
-                ["today", "Today"],
-                ["7d", "7 days"],
-                ["30d", "30 days"],
-              ] as [Period, string][]
-            ).map(([v, label]) => (
-              <button
-                key={v}
-                type="button"
-                onClick={() => setPeriod(v)}
-                aria-pressed={period === v}
-                className={`rounded-[8px] px-3.5 py-2 transition-colors ${period === v ? "bg-pitch text-cream" : "text-ink-soft"}`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+        <div className="flex w-full gap-2 sm:w-auto">
           <button
             type="button"
-            onClick={exportCSV}
-            className="flex items-center gap-1.5 rounded-ctl border border-pitch/30 px-3.5 py-2.5 text-sm font-bold text-pitch"
+            onClick={exportLedger}
+            disabled={entries.length === 0}
+            className="pressable flex h-11 flex-1 items-center justify-center gap-2 rounded-ctl border border-line bg-surface px-3.5 text-sm font-bold text-ink-soft disabled:opacity-40 sm:flex-none"
           >
-            <Download size={15} /> CSV
+            <Download size={16} /> Export
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowExpenseForm((current) => !current)}
+            aria-expanded={showExpenseForm}
+            className="pressable flex h-11 flex-1 items-center justify-center gap-2 rounded-ctl bg-pitch px-4 text-sm font-bold text-cream hover:bg-pitch-deep sm:flex-none"
+          >
+            {showExpenseForm ? <X size={17} /> : <Plus size={17} />}
+            {showExpenseForm ? "Close" : "Add expense"}
           </button>
         </div>
+      </header>
+
+      <div className="rail mt-5 flex overflow-x-auto rounded-ctl border border-line bg-surface p-1 sm:w-fit" aria-label="Ledger period">
+        {(["today", "week", "month"] as Period[]).map((value) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => setPeriod(value)}
+            aria-pressed={period === value}
+            className={`pressable min-w-fit rounded-[7px] px-4 py-2 text-sm font-bold ${
+              period === value ? "bg-pitch text-cream" : "text-ink-soft hover:bg-cream"
+            }`}
+          >
+            {PERIOD_LABEL[value]}
+          </button>
+        ))}
       </div>
 
-      {/* Headline numbers */}
-      <dl className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Metric label="Net sales" value={npr(revenue)} sub={grossSales !== revenue ? `${npr(grossSales)} before promos` : "served orders"} />
-        <Metric label="Orders served" value={String(served.length)} sub={`${completionRate}% complete${cancelled.length ? ` · ${cancelled.length} cancelled` : ""}`} />
-        <Metric
-          label="Average ticket"
-          value={served.length ? npr(avgTicket) : "—"}
-          sub={discountsGiven > 0 ? `${npr(discountsGiven)} in promos` : undefined}
-        />
-        <Metric label="Customer rating" value={avgRating ? `${avgRating} / 5` : "—"} sub={ratings.length ? `${ratings.length} ratings` : "no ratings yet"} />
-      </dl>
-
-      <div className="mt-3 grid gap-3 lg:grid-cols-[1.1fr_0.9fr]">
-        <section className="rounded-card border border-line bg-surface p-4 shadow-lift" aria-label="Payment split">
+      {showExpenseForm && (
+        <form onSubmit={addExpense} className="animate-fade-in mt-4 rounded-card border border-pitch/20 bg-surface p-4 shadow-lift">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="font-display text-lg">Payment split</h2>
-            <span className="rounded-full bg-pitch-soft px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-pitch">
-              {npr(cashRevenue + qrRevenue)} collected
-            </span>
-          </div>
-          <div className="mt-4 grid gap-2 sm:grid-cols-3">
-            <PaymentMetric icon="cash" label="Cash" value={cashRevenue} />
-            <PaymentMetric icon="qr" label="Counter QR" value={qrRevenue} />
-            <PaymentMetric icon="due" label="Served, unpaid" value={uncollectedServed} danger />
-          </div>
-        </section>
-
-        <section className="rounded-card border border-line bg-surface p-4 shadow-lift" aria-label="Shift pulse">
-          <div className="flex items-center gap-2">
-            <TrendingUp size={18} className="text-pitch" />
-            <h2 className="font-display text-lg">Shift pulse</h2>
-          </div>
-          <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
             <div>
-              <dt className="font-bold uppercase tracking-wide text-ink-faint text-xs">Peak hour</dt>
-              <dd className="price mt-1 font-display text-xl">{peakHour.count ? `${peakHour.hour}:00` : "—"}</dd>
-              <dd className="text-xs text-ink-faint">{peakHour.count ? `${peakHour.count} orders` : "No demand yet"}</dd>
+              <h2 className="font-display text-xl">Record an expense</h2>
+              <p className="text-sm text-ink-soft">Purchases, wages, rent, utilities, or repairs.</p>
             </div>
-            <div>
-              <dt className="font-bold uppercase tracking-wide text-ink-faint text-xs">Open now</dt>
-              <dd className="price mt-1 font-display text-xl">{orders.filter((o) => o.status !== "served").length}</dd>
-              <dd className="text-xs text-ink-faint">active or unpaid flow</dd>
+            <span className="hidden rounded-full bg-pitch-soft px-3 py-1 text-xs font-bold text-pitch sm:inline">Syncs to all devices</span>
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-[1fr_1.25fr_0.7fr_0.75fr]">
+            <label className="text-xs font-bold uppercase tracking-wide text-ink-faint">
+              Category
+              <select value={category} onChange={(event) => setCategory(event.target.value as ExpenseCategory)} className="mt-1.5 h-11 w-full rounded-ctl border border-line bg-cream px-3 text-sm font-bold normal-case tracking-normal text-ink outline-none focus:border-pitch-bright">
+                {EXPENSE_CATEGORIES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+              </select>
+            </label>
+            <label className="text-xs font-bold uppercase tracking-wide text-ink-faint">
+              Description
+              <input value={note} onChange={(event) => setNote(event.target.value)} required placeholder="e.g. Morning milk delivery" className="mt-1.5 h-11 w-full rounded-ctl border border-line bg-cream px-3 text-sm font-normal normal-case tracking-normal text-ink outline-none placeholder:text-ink-faint focus:border-pitch-bright" />
+            </label>
+            <label className="text-xs font-bold uppercase tracking-wide text-ink-faint">
+              Amount (NPR)
+              <input value={amount} onChange={(event) => setAmount(event.target.value)} required min="1" step="1" inputMode="numeric" type="number" placeholder="0" className="price mt-1.5 h-11 w-full rounded-ctl border border-line bg-cream px-3 text-sm font-bold normal-case tracking-normal text-ink outline-none placeholder:text-ink-faint focus:border-pitch-bright" />
+            </label>
+            <label className="text-xs font-bold uppercase tracking-wide text-ink-faint">
+              Date
+              <input value={expenseDate} onChange={(event) => setExpenseDate(event.target.value)} max={localDateInputValue()} required type="date" className="mt-1.5 h-11 w-full rounded-ctl border border-line bg-cream px-3 text-sm font-bold normal-case tracking-normal text-ink outline-none focus:border-pitch-bright" />
+            </label>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex rounded-ctl border border-line bg-cream p-1" aria-label="Expense payment method">
+              {(["cash", "bank"] as const).map((method) => (
+                <button key={method} type="button" onClick={() => setExpenseMethod(method)} aria-pressed={expenseMethod === method} className={`rounded-[7px] px-3 py-1.5 text-sm font-bold ${expenseMethod === method ? "bg-surface text-pitch shadow-sm" : "text-ink-faint"}`}>
+                  {method === "cash" ? "Cash" : "Bank / QR"}
+                </button>
+              ))}
             </div>
-          </dl>
-        </section>
-      </div>
-
-      {served.length === 0 && orders.length === 0 ? (
-        <p className="mt-14 text-center text-ink-faint">
-          No orders in this period yet. Reports fill in as orders are served.
-        </p>
-      ) : (
-        <div className="mt-6 grid gap-6 lg:grid-cols-2">
-          <section aria-label="Best sellers">
-            <h2 className="font-display text-lg">Best sellers</h2>
-            <BarList
-              rows={bySales.map((s) => ({ label: s.name, value: s.revenue, detail: `${s.qty} sold · ${npr(s.revenue)}` }))}
-              empty="Nothing served yet."
-            />
-          </section>
-
-          <section aria-label="Revenue by category">
-            <h2 className="font-display text-lg">Revenue by category</h2>
-            <BarList
-              rows={byCategory.map(([label, v]) => ({ label, value: v, detail: npr(v) }))}
-              empty="Nothing served yet."
-            />
-          </section>
-
-          <section aria-label="Peak hours">
-            <h2 className="font-display text-lg">Peak hours</h2>
-            <div className="mt-3 flex h-44 items-end gap-1 rounded-card border border-line bg-surface p-4">
-              {byHour.map(({ hour, count }) => {
-                const max = Math.max(1, ...byHour.map((x) => x.count));
-                return (
-                  <div key={hour} className="flex flex-1 flex-col items-center gap-1" title={`${count} orders at ${hour}:00`}>
-                    <div
-                      className={`w-full rounded-t-[3px] transition-colors ${count > 0 ? "bg-pitch-bright" : "bg-line-soft"}`}
-                      style={{ height: `${Math.max(4, (count / max) * 112)}px` }}
-                    />
-                    <span className="tabular text-[10px] text-ink-faint">{hour}</span>
-                  </div>
-                );
-              })}
-            </div>
-            <p className="mt-1.5 text-xs text-ink-faint">
-              Orders placed per hour, 7:00 to 21:00. Peak: {peakHour.count ? `${peakHour.hour}:00 with ${peakHour.count} orders and ${npr(peakHour.revenue)}` : "no orders yet"}.
-            </p>
-          </section>
-
-          <section aria-label="Staff performance">
-            <h2 className="font-display text-lg">Orders served by staff</h2>
-            <BarList
-              rows={byStaff.map((s) => ({ label: s.name, value: s.count, detail: `${s.count} orders` }))}
-              empty="No served orders attributed yet — staff are recorded when they tap “Mark served”."
-            />
-          </section>
-        </div>
+            <button type="submit" disabled={!note.trim() || Number(amount) <= 0} className="pressable h-11 rounded-ctl bg-pitch px-5 text-sm font-bold text-cream disabled:opacity-40">
+              Save expense
+            </button>
+          </div>
+        </form>
       )}
-    </div>
-  );
-}
 
-function PaymentMetric({
-  icon,
-  label,
-  value,
-  danger,
-}: {
-  icon: "cash" | "qr" | "due";
-  label: string;
-  value: number;
-  danger?: boolean;
-}) {
-  const Icon = icon === "cash" ? Banknote : icon === "qr" ? QrCode : ReceiptText;
-  return (
-    <div className={`rounded-ctl border px-3 py-3 ${danger ? "border-terracotta/30 bg-terracotta-soft" : "border-line bg-cream"}`}>
-      <p className={`flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide ${danger ? "text-terracotta" : "text-ink-faint"}`}>
-        <Icon size={14} /> {label}
-      </p>
-      <p className="price mt-1 font-display text-xl text-ink">{value ? npr(value) : "—"}</p>
-    </div>
-  );
-}
-
-function Metric({ label, value, sub }: { label: string; value: string; sub?: string }) {
-  return (
-    <div className="rounded-card border border-line bg-surface px-4 py-3.5">
-      <dt className="text-xs font-bold uppercase tracking-wide text-ink-faint">{label}</dt>
-      <dd className="price mt-1 font-display text-xl">{value}</dd>
-      {sub && <dd className="text-xs text-ink-faint">{sub}</dd>}
-    </div>
-  );
-}
-
-function BarList({
-  rows,
-  empty,
-}: {
-  rows: { label: string; value: number; detail: string }[];
-  empty: string;
-}) {
-  if (rows.length === 0) {
-    return <p className="mt-3 rounded-card border border-line bg-surface p-4 text-sm text-ink-faint">{empty}</p>;
-  }
-  const max = Math.max(...rows.map((r) => r.value));
-  return (
-    <ul className="mt-3 space-y-2.5 rounded-card border border-line bg-surface p-4">
-      {rows.map((r) => (
-        <li key={r.label}>
-          <div className="flex items-baseline justify-between gap-3 text-sm">
-            <span className="truncate font-bold">{r.label}</span>
-            <span className="price shrink-0 text-ink-soft">{r.detail}</span>
+      <section className="mt-5 overflow-hidden rounded-card border border-line bg-pitch text-cream shadow-lift" aria-label="Financial summary">
+        <div className="grid md:grid-cols-[1.2fr_1fr_1fr]">
+          <div className="p-5 md:p-6">
+            <p className="text-xs font-bold uppercase tracking-[0.14em] text-pitch-soft">Net balance · {PERIOD_LABEL[period]}</p>
+            <p className={`price mt-2 font-display text-4xl ${balance < 0 ? "text-terracotta-soft" : "text-cream"}`}>{npr(balance)}</p>
+            <p className="mt-2 text-sm text-pitch-soft">Collected revenue minus recorded expenses.</p>
           </div>
-          <div className="mt-1 h-2 rounded-full bg-cream">
-            <div
-              className="h-2 rounded-full bg-pitch-bright"
-              style={{ width: `${Math.max(4, (r.value / max) * 100)}%` }}
-            />
+          <div className="grid grid-cols-2 border-t border-pitch-bright/20 md:border-l md:border-t-0">
+            <SummaryCell label="Revenue" value={income} icon="up" />
+            <SummaryCell label="Expenses" value={expenseTotal} icon="down" />
           </div>
-        </li>
-      ))}
-    </ul>
+          <div className="grid grid-cols-2 border-t border-pitch-bright/20 md:border-l md:border-t-0">
+            <SummaryCell label="Paid orders" value={paidOrders.length} count icon="orders" />
+            <SummaryCell label="Still to collect" value={outstanding} icon="due" danger={outstanding > 0} />
+          </div>
+        </div>
+      </section>
+
+      <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1.45fr)_minmax(18rem,0.75fr)]">
+        <section className="min-w-0" aria-label="Ledger entries">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 className="font-display text-xl">Transactions</h2>
+              <p className="text-sm text-ink-soft">{entries.length} entries in {PERIOD_LABEL[period].toLowerCase()}</p>
+            </div>
+            <div className="flex rounded-ctl border border-line bg-surface p-1">
+              {(["all", "income", "expense"] as EntryFilter[]).map((value) => (
+                <button key={value} type="button" onClick={() => setEntryFilter(value)} aria-pressed={entryFilter === value} className={`rounded-[7px] px-3 py-1.5 text-xs font-bold capitalize ${entryFilter === value ? "bg-pitch-soft text-pitch" : "text-ink-faint"}`}>
+                  {value === "all" ? "All" : value === "income" ? "Income" : "Expenses"}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-3 overflow-hidden rounded-card border border-line bg-surface">
+            {visibleEntries.length > 0 ? (
+              <ul className="divide-y divide-line-soft">
+                {visibleEntries.map((entry) => (
+                  <li key={entry.id} className="group flex items-center gap-3 px-3.5 py-3.5 sm:px-4">
+                    <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${entry.kind === "income" ? "bg-pitch-soft text-pitch" : "bg-terracotta-soft text-terracotta"}`}>
+                      {entry.kind === "income" ? <ArrowUpRight size={18} /> : <ArrowDownLeft size={18} />}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline gap-2">
+                        <p className="truncate font-bold">{entry.title}</p>
+                        <span className="shrink-0 text-xs text-ink-faint">{entryDateLabel(entry.at, period)}</span>
+                      </div>
+                      <p className="truncate text-xs text-ink-soft">{entry.detail} · {entry.method}</p>
+                    </div>
+                    <p className={`price shrink-0 font-display text-lg ${entry.kind === "income" ? "text-pitch" : "text-terracotta"}`}>
+                      {entry.kind === "income" ? "+" : "−"}{npr(entry.amount)}
+                    </p>
+                    {entry.expenseId && (
+                      <button type="button" aria-label={`Delete ${entry.title}`} onClick={() => { if (window.confirm(`Delete expense “${entry.title}”?`)) getStore().deleteExpense(entry.expenseId!); }} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-ctl text-ink-faint hover:bg-terracotta-soft hover:text-terracotta sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100">
+                        <Trash2 size={16} />
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="px-5 py-12 text-center">
+                <ReceiptText size={28} className="mx-auto text-ink-faint" />
+                <p className="mt-3 font-bold">No {entryFilter === "all" ? "transactions" : entryFilter} yet</p>
+                <p className="mt-1 text-sm text-ink-faint">Paid orders and recorded costs will appear here.</p>
+              </div>
+            )}
+          </div>
+        </section>
+
+        <aside className="space-y-5">
+          <section aria-label="Payment split">
+            <div className="flex items-center gap-2">
+              <Banknote size={18} className="text-pitch" />
+              <h2 className="font-display text-xl">Money collected</h2>
+            </div>
+            <div className="mt-3 divide-y divide-line-soft overflow-hidden rounded-card border border-line bg-surface">
+              <SplitRow icon={<Banknote size={16} />} label="Cash" value={cashIncome} total={income} />
+              <SplitRow icon={<QrCode size={16} />} label="Counter QR" value={qrIncome} total={income} />
+            </div>
+          </section>
+
+          <section aria-label="Best sellers">
+            <div className="flex items-center gap-2">
+              <TrendingUp size={18} className="text-pitch" />
+              <h2 className="font-display text-xl">Best sellers</h2>
+            </div>
+            <div className="mt-3 overflow-hidden rounded-card border border-line bg-surface">
+              {bestSellers.length > 0 ? (
+                <ol className="divide-y divide-line-soft">
+                  {bestSellers.map((item, index) => (
+                    <li key={item.name} className="px-4 py-3">
+                      <div className="flex items-baseline justify-between gap-3">
+                        <p className="min-w-0 truncate text-sm font-bold"><span className="mr-2 text-ink-faint">{index + 1}</span>{item.name}</p>
+                        <p className="shrink-0 text-xs font-bold text-ink-soft">{item.qty} sold</p>
+                      </div>
+                      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-cream">
+                        <div className="h-full rounded-full bg-pitch-bright" style={{ width: `${Math.max(8, (item.qty / topQuantity) * 100)}%` }} />
+                      </div>
+                      <p className="mt-1 text-right text-xs text-ink-faint">{npr(item.revenue)} item sales</p>
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="px-4 py-8 text-center text-sm text-ink-faint">Best sellers appear after payments are collected.</p>
+              )}
+            </div>
+          </section>
+
+          <p className="flex items-start gap-2 rounded-ctl bg-pitch-soft px-3.5 py-3 text-xs leading-relaxed text-pitch">
+            <CalendarDays size={15} className="mt-0.5 shrink-0" />
+            Revenue is locked when the counter marks an order paid. Expenses are synced through the same shared database as orders.
+          </p>
+        </aside>
+      </div>
+    </div>
+  );
+}
+
+function SummaryCell({ label, value, count, icon, danger }: { label: string; value: number; count?: boolean; icon: "up" | "down" | "orders" | "due"; danger?: boolean }) {
+  const Icon = icon === "up" ? ArrowUpRight : icon === "down" ? ArrowDownLeft : icon === "orders" ? ReceiptText : WalletCards;
+  return (
+    <div className="min-w-0 p-4 md:flex md:flex-col md:justify-center">
+      <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-pitch-soft"><Icon size={14} /> {label}</p>
+      <p className={`price mt-1 font-display text-xl ${danger ? "text-saffron" : "text-cream"}`}>{count ? value : npr(value)}</p>
+    </div>
+  );
+}
+
+function SplitRow({ icon, label, value, total }: { icon: React.ReactNode; label: string; value: number; total: number }) {
+  const percent = total > 0 ? Math.round((value / total) * 100) : 0;
+  return (
+    <div className="px-4 py-3">
+      <div className="flex items-center justify-between gap-3 text-sm">
+        <p className="flex items-center gap-2 font-bold text-ink-soft">{icon}{label}</p>
+        <p className="price font-bold">{npr(value)}</p>
+      </div>
+      <div className="mt-2 flex items-center gap-2">
+        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-cream"><div className="h-full rounded-full bg-pitch-bright" style={{ width: `${percent}%` }} /></div>
+        <span className="tabular w-9 text-right text-xs text-ink-faint">{percent}%</span>
+      </div>
+    </div>
   );
 }

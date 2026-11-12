@@ -1,4 +1,4 @@
-import type { Order, OrderLine, Promo } from "./types";
+import type { Order, OrderLine, Promo, Settings } from "./types";
 
 /** Sum of line items before any discount. */
 export function linesSubtotal(lines: Pick<OrderLine, "qty" | "price">[]): number {
@@ -8,6 +8,14 @@ export function linesSubtotal(lines: Pick<OrderLine, "qty" | "price">[]): number
 /** What the customer actually pays: subtotal minus an applied promo. */
 export function orderTotal(order: Order): number {
   return Math.max(0, linesSubtotal(order.lines) - (order.discount?.amount ?? 0));
+}
+
+/** Final amount collected after configured service charge and VAT. */
+export function orderGrandTotal(order: Order, settings: Pick<Settings, "serviceChargePercent" | "vatPercent">): number {
+  const subtotal = orderTotal(order);
+  const service = Math.round((subtotal * settings.serviceChargePercent) / 100);
+  const vat = Math.round((subtotal * settings.vatPercent) / 100);
+  return subtotal + service + vat;
 }
 
 export function promoExpired(promo: Promo, now: number = Date.now()): boolean {

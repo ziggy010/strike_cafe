@@ -41,10 +41,15 @@ calls sync live between tabs.
 | Kitchen display (rounds, timers, urgency) | `src/app/staff/kitchen/page.tsx` |
 | Menu CRUD, stock, photos, specials, time windows | `src/app/staff/menu/page.tsx` |
 | Tables + QR generate/download/print | `src/app/staff/tables/page.tsx` |
-| Sales, best sellers, peak hours, staff perf, CSV | `src/app/staff/reports/page.tsx` |
+| Owner ledger, expenses, cashflow, best sellers, CSV | `src/app/staff/reports/page.tsx` |
 | Inventory counts, low-stock alerts, adjustment log | `src/app/staff/inventory/page.tsx` |
 | Café profile, VAT/service, sound, staff PINs | `src/app/staff/settings/page.tsx` |
 | Types / seed / store / i18n | `src/lib/` |
 
 Payments v1 is cash / counter-QR with staff marking orders paid. eSewa/Khalti API
 integration is a planned phase 2 (see SETUP.md).
+
+The owner ledger derives revenue from paid orders, so payments cannot be counted twice.
+Payment time, collected amount, method, and counter staff are locked onto each order.
+Manual expenses live in the shared `app_state` and merge by ID across devices; past paid
+orders remain in `order_archive` for durable reporting.

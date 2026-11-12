@@ -40,10 +40,10 @@ const NAV: { href: string; label: string; icon: typeof ChefHat; roles: Role[] }[
   { href: "/staff", label: "Orders", icon: ClipboardList, roles: ["admin", "waiter", "kitchen"] },
   { href: "/staff/kitchen", label: "Kitchen", icon: ChefHat, roles: ["admin", "kitchen"] },
   { href: "/staff/billing", label: "Billing", icon: ReceiptText, roles: ["admin", "counter"] },
+  { href: "/staff/reports", label: "Ledger", icon: BarChart3, roles: ["admin"] },
   { href: "/staff/menu", label: "Menu", icon: UtensilsCrossed, roles: ["admin"] },
   { href: "/staff/deals", label: "Deals", icon: BadgePercent, roles: ["admin"] },
   { href: "/staff/tables", label: "Tables", icon: QrCode, roles: ["admin", "waiter"] },
-  { href: "/staff/reports", label: "Reports", icon: BarChart3, roles: ["admin"] },
   { href: "/staff/inventory", label: "Inventory", icon: Boxes, roles: ["admin"] },
   { href: "/staff/settings", label: "Settings", icon: SettingsIcon, roles: ["admin"] },
 ];

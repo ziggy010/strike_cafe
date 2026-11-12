@@ -184,6 +184,7 @@ export function seedDB(): DB {
       { id: "inv-water", name: "Mineral water", unit: "pcs", qty: 36, lowThreshold: 12 },
     ],
     inventoryLogs: [],
+    expenses: [],
     settings: {
       cafeName: "Strike Yard",
       cafeNameNe: "स्ट्राइक यार्ड",

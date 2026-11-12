@@ -39,6 +39,12 @@ Demo mode's limitation: each device has its own data. For real service (customer
 The app uses Supabase Realtime through the `app_state` table. If the env vars are missing,
 it automatically falls back to demo mode, which only syncs tabs on the same device.
 
+Orders, payments, and owner-entered expenses are part of this shared state. Closed orders
+are copied into `order_archive`, while payment amounts are stored at collection time so
+future VAT or service-charge changes do not alter old ledger totals. Adding the ledger to
+an existing installation does not require a new SQL migration because `app_state.data` is
+JSON and the app upgrades older records when it loads them.
+
 ## 3. Print table QR codes
 
 Staff panel → Tables → **Print all** (or download PNGs per table). Laminate and stick to
