@@ -32,6 +32,7 @@ const CLOUD_STATE_ID = "main";
 // archive, so the realtime blob stays small no matter how busy the café gets.
 const ARCHIVE_CAP = 3000; // keep the local archive bounded
 const ARCHIVE_CLOUD_DAYS = 40; // how far back to hydrate the archive from cloud
+const STALE_OPEN_ORDER_MS = 24 * 60 * 60 * 1000;
 
 // Safety-net poll: realtime is the fast path, but events can be dropped or
 // arrive without their payload, so we also re-fetch on this interval while the
@@ -169,9 +170,19 @@ class Store {
     if (!Array.isArray(db.promos)) db.promos = seed.promos;
     db.orders.forEach((o) => {
       o.discount ??= null;
+      o.revision ??= 0;
       o.paidAt ??= o.paid ? o.updatedAt : null;
       o.paidAmount ??= o.paid ? orderGrandTotal(o, db.settings) : null;
       o.paidBy ??= null;
+      // An unpaid kitchen ticket cannot still be active a full day later. Keep
+      // it in history as cancelled instead of reviving it on every new device.
+      if (isOpen(o) && !o.paid && o.placedAt < Date.now() - STALE_OPEN_ORDER_MS) {
+        const closedAt = Date.now();
+        o.status = "cancelled";
+        o.statusAt.cancelled ??= closedAt;
+        o.updatedAt = Math.max(closedAt, o.updatedAt + 1);
+        o.revision += 1;
+      }
     });
     db.calls.forEach((call) => {
       call.acceptedAt ??= null;
@@ -319,7 +330,9 @@ class Store {
    */
   private applyIncoming(incoming: DB): void {
     const local = this.db;
-    const orderRank = (order: Order) => order.updatedAt;
+    // Revision is authoritative across devices; timestamp breaks ties between
+    // older clients that have not received revision support yet.
+    const orderRank = (order: Order) => (order.revision ?? 0) * 10_000_000_000_000 + order.updatedAt;
     const callRank = (call: DB["calls"][number]) =>
       Math.max(call.createdAt, call.acceptedAt ?? 0, call.resolvedAt ?? 0);
     const expenseRank = (expense: Expense) => expense.updatedAt;
@@ -330,6 +343,10 @@ class Store {
       hasLocalAhead(orders, incoming.orders, orderRank) ||
       hasLocalAhead(calls, incoming.calls, callRank) ||
       hasLocalAhead(expenses, incoming.expenses, expenseRank);
+    const cloudWasAhead =
+      hasLocalAhead(orders, local.orders, orderRank) ||
+      hasLocalAhead(calls, local.calls, callRank) ||
+      hasLocalAhead(expenses, local.expenses, expenseRank);
     const base = this.pendingSave ? local : incoming;
     this.db = { ...base, orders, calls, expenses };
 
@@ -338,10 +355,11 @@ class Store {
     if (archived.length > 0) {
       this.pushToArchive(archived);
       this.queueCloudSave(this.db);
-    } else if (localWasAhead) {
+    } else if (localWasAhead || (this.pendingSave && cloudWasAhead)) {
       // A device may have created an order while Supabase was paused or the
-      // phone was offline. Persist the merged snapshot as soon as cloud access
-      // returns so other devices receive those locally queued records.
+      // phone was offline. A cloud update can also arrive while an older local
+      // snapshot is still inside the debounce window. Always replace that
+      // queued snapshot with the fully merged state before it is uploaded.
       this.queueCloudSave(this.db);
     }
     this.emit();
@@ -466,6 +484,7 @@ class Store {
       servedBy: null,
       placedAt: Date.now(),
       updatedAt: Date.now(),
+      revision: 0,
       statusAt: { received: Date.now() },
       feedback: null,
       discount,
@@ -503,6 +522,7 @@ class Store {
       // New food re-enters the kitchen queue
       if (o.status === "ready") o.status = "preparing";
       o.updatedAt = Date.now();
+      o.revision = (o.revision ?? 0) + 1;
     });
   }
 
@@ -513,6 +533,7 @@ class Store {
       o.status = status;
       o.statusAt[status] = Date.now();
       o.updatedAt = Date.now();
+      o.revision = (o.revision ?? 0) + 1;
       if (status === "served" && byUserId) o.servedBy = byUserId;
     });
   }
@@ -527,6 +548,7 @@ class Store {
       o.paidAmount = amount ?? orderGrandTotal(o, db.settings);
       o.paidBy = byUserId ?? null;
       o.updatedAt = o.paidAt;
+      o.revision = (o.revision ?? 0) + 1;
     });
   }
 
@@ -565,7 +587,11 @@ class Store {
   submitFeedback(orderId: string, rating: number, comment: string): void {
     this.mutate((db) => {
       const o = db.orders.find((x) => x.id === orderId);
-      if (o) o.feedback = { rating, comment };
+      if (o) {
+        o.feedback = { rating, comment };
+        o.updatedAt = Date.now();
+        o.revision = (o.revision ?? 0) + 1;
+      }
     });
   }
 

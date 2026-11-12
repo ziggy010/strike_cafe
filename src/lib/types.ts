@@ -68,6 +68,7 @@ export interface Order {
   servedBy: string | null; // staff user id who served/closed it
   placedAt: number;
   updatedAt: number;
+  revision: number; // monotonic conflict version; prevents stale devices reviving old status
   statusAt: Partial<Record<OrderStatus, number>>; // timestamps per transition
   feedback: { rating: number; comment: string } | null;
   discount: AppliedDiscount | null; // applied promo code, if any
