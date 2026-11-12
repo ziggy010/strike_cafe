@@ -6,6 +6,7 @@ import {
   ArrowUpRight,
   Banknote,
   CalendarDays,
+  ChevronDown,
   Download,
   Plus,
   QrCode,
@@ -33,6 +34,15 @@ type LedgerEntry = {
   detail: string;
   method: string;
   amount: number;
+  items?: {
+    id: string;
+    name: string;
+    qty: number;
+    price: number;
+    note: string;
+    batch: number;
+  }[];
+  discount?: { code: string; amount: number } | null;
   expenseId?: string;
 };
 
@@ -83,6 +93,7 @@ export default function ReportsPage() {
   const user = useStaff();
   const [period, setPeriod] = useState<Period>("today");
   const [entryFilter, setEntryFilter] = useState<EntryFilter>("all");
+  const [expandedEntryId, setExpandedEntryId] = useState<string | null>(null);
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [category, setCategory] = useState<ExpenseCategory>("ingredients");
   const [amount, setAmount] = useState("");
@@ -133,6 +144,15 @@ export default function ReportsPage() {
         detail: `${table} · ${order.lines.reduce((sum, line) => sum + line.qty, 0)} items${collector ? ` · ${collector}` : ""}`,
         method: order.paymentMethod === "counter-qr" ? "Counter QR" : "Cash",
         amount: collectedAmount(order, db.settings),
+        items: order.lines.map((line, index) => ({
+          id: `${order.id}-${line.itemId}-${line.batch}-${index}`,
+          name: line.name,
+          qty: line.qty,
+          price: line.price,
+          note: line.note,
+          batch: line.batch,
+        })),
+        discount: order.discount,
       };
     }),
     ...expenses.map((expense) => ({
@@ -319,28 +339,87 @@ export default function ReportsPage() {
           <div className="mt-3 overflow-hidden rounded-card border border-line bg-surface">
             {visibleEntries.length > 0 ? (
               <ul className="divide-y divide-line-soft">
-                {visibleEntries.map((entry) => (
-                  <li key={entry.id} className="group flex items-center gap-3 px-3.5 py-3.5 sm:px-4">
-                    <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${entry.kind === "income" ? "bg-pitch-soft text-pitch" : "bg-terracotta-soft text-terracotta"}`}>
-                      {entry.kind === "income" ? <ArrowUpRight size={18} /> : <ArrowDownLeft size={18} />}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-baseline gap-2">
-                        <p className="truncate font-bold">{entry.title}</p>
-                        <span className="shrink-0 text-xs text-ink-faint">{entryDateLabel(entry.at, period)}</span>
-                      </div>
-                      <p className="truncate text-xs text-ink-soft">{entry.detail} · {entry.method}</p>
-                    </div>
-                    <p className={`price shrink-0 font-display text-lg ${entry.kind === "income" ? "text-pitch" : "text-terracotta"}`}>
-                      {entry.kind === "income" ? "+" : "−"}{npr(entry.amount)}
-                    </p>
-                    {entry.expenseId && (
-                      <button type="button" aria-label={`Delete ${entry.title}`} onClick={() => { if (window.confirm(`Delete expense “${entry.title}”?`)) getStore().deleteExpense(entry.expenseId!); }} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-ctl text-ink-faint hover:bg-terracotta-soft hover:text-terracotta sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100">
-                        <Trash2 size={16} />
-                      </button>
-                    )}
-                  </li>
-                ))}
+                {visibleEntries.map((entry) => {
+                  const expanded = expandedEntryId === entry.id;
+                  return (
+                    <li key={entry.id} className="group">
+                      {entry.kind === "income" ? (
+                        <button
+                          type="button"
+                          onClick={() => setExpandedEntryId(expanded ? null : entry.id)}
+                          aria-expanded={expanded}
+                          aria-controls={`${entry.id}-details`}
+                          className="pressable flex w-full items-center gap-3 px-3.5 py-3.5 text-left hover:bg-cream/60 sm:px-4"
+                        >
+                          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-pitch-soft text-pitch">
+                            <ArrowUpRight size={18} />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-baseline gap-2">
+                              <p className="truncate font-bold">{entry.title}</p>
+                              <span className="shrink-0 text-xs text-ink-faint">{entryDateLabel(entry.at, period)}</span>
+                            </div>
+                            <p className="truncate text-xs text-ink-soft">{entry.detail} · {entry.method}</p>
+                          </div>
+                          <p className="price shrink-0 font-display text-lg text-pitch">+{npr(entry.amount)}</p>
+                          <ChevronDown size={18} className={`shrink-0 text-ink-faint transition-transform duration-200 ${expanded ? "rotate-180" : ""}`} />
+                        </button>
+                      ) : (
+                        <div className="flex items-center gap-3 px-3.5 py-3.5 sm:px-4">
+                          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-terracotta-soft text-terracotta">
+                            <ArrowDownLeft size={18} />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-baseline gap-2">
+                              <p className="truncate font-bold">{entry.title}</p>
+                              <span className="shrink-0 text-xs text-ink-faint">{entryDateLabel(entry.at, period)}</span>
+                            </div>
+                            <p className="truncate text-xs text-ink-soft">{entry.detail} · {entry.method}</p>
+                          </div>
+                          <p className="price shrink-0 font-display text-lg text-terracotta">−{npr(entry.amount)}</p>
+                          {entry.expenseId && (
+                            <button type="button" aria-label={`Delete ${entry.title}`} onClick={() => { if (window.confirm(`Delete expense “${entry.title}”?`)) getStore().deleteExpense(entry.expenseId!); }} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-ctl text-ink-faint hover:bg-terracotta-soft hover:text-terracotta sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100">
+                              <Trash2 size={16} />
+                            </button>
+                          )}
+                        </div>
+                      )}
+
+                      {entry.kind === "income" && expanded && (
+                        <div id={`${entry.id}-details`} className="animate-fade-in border-t border-line-soft bg-cream/55 px-4 py-3.5 sm:pl-[4.75rem] sm:pr-5">
+                          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-ink-faint">Items ordered</p>
+                          <ul className="mt-2 divide-y divide-line-soft">
+                            {entry.items?.map((item) => (
+                              <li key={item.id} className="flex items-start justify-between gap-4 py-2.5 first:pt-1">
+                                <div className="min-w-0">
+                                  <p className="text-sm font-bold"><span className="tabular text-pitch">{item.qty}×</span> {item.name}</p>
+                                  {(item.note || item.batch > 1) && (
+                                    <p className="mt-0.5 text-xs text-ink-soft">
+                                      {item.batch > 1 && `Round ${item.batch}`}
+                                      {item.batch > 1 && item.note && " · "}
+                                      {item.note && `Note: ${item.note}`}
+                                    </p>
+                                  )}
+                                </div>
+                                <p className="price shrink-0 text-sm font-bold text-ink-soft">{npr(item.qty * item.price)}</p>
+                              </li>
+                            ))}
+                          </ul>
+                          {entry.discount && (
+                            <div className="flex items-center justify-between gap-4 border-t border-line-soft py-2 text-sm text-pitch">
+                              <span className="font-bold">Promo {entry.discount.code}</span>
+                              <span className="price">−{npr(entry.discount.amount)}</span>
+                            </div>
+                          )}
+                          <div className="flex items-center justify-between gap-4 border-t border-line pt-2.5">
+                            <span className="text-sm font-bold text-ink-soft">Amount collected</span>
+                            <span className="price font-display text-lg text-pitch">{npr(entry.amount)}</span>
+                          </div>
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             ) : (
               <div className="px-5 py-12 text-center">
