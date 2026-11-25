@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { Bell, BellRing, Clock3, Moon, Plus, Search, ShoppingBag, Sparkles, Sun, X } from "lucide-react";
 import type { CartLine } from "./cart";
 import { ItemSheet, CartSheet } from "./Sheets";
@@ -31,8 +32,45 @@ export default function MenuApp({ tableId }: { tableId: string }) {
   const { lang, t } = customerCopy;
   const savedTheme = useStoredString("local", THEME_KEY);
   const [themeOverride, setThemeOverride] = useState<"light" | "dark" | null>(null);
+  const themeTransition = useRef<ViewTransition | null>(null);
   const dark = (themeOverride ?? savedTheme) === "dark";
   const themeAction = dark ? "Switch to light mode" : "Switch to dark mode";
+
+  useEffect(() => {
+    const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+    if (!meta) return;
+    const previous = meta.content;
+    const color = dark ? "#181510" : "#f6f5ef";
+    meta.content = color;
+    return () => {
+      if (meta.content === color) meta.content = previous;
+    };
+  }, [dark]);
+
+  function toggleTheme() {
+    const next = dark ? "light" : "dark";
+    const apply = () => {
+      setThemeOverride(next);
+      writeStoredString("local", THEME_KEY, next);
+    };
+
+    if (!document.startViewTransition || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      apply();
+      return;
+    }
+
+    themeTransition.current?.skipTransition();
+    const root = document.documentElement;
+    root.classList.add("customer-theme-transition");
+    const transition = document.startViewTransition(() => flushSync(apply));
+    themeTransition.current = transition;
+    const cleanup = () => {
+      if (themeTransition.current !== transition) return;
+      themeTransition.current = null;
+      root.classList.remove("customer-theme-transition");
+    };
+    void transition.finished.then(cleanup, cleanup);
+  }
 
   const table = db.tables.find((x) => x.id === tableId);
 
@@ -175,10 +213,10 @@ export default function MenuApp({ tableId }: { tableId: string }) {
   }
 
   return (
-    <div data-customer-theme={dark ? "dark" : "light"} className="mx-auto w-full max-w-md pb-28">
+    <div data-customer-theme={dark ? "dark" : "light"} className="mx-auto min-h-dvh w-full max-w-md pb-28">
       {/* Header */}
-      <header className="sticky top-0 z-30 border-b border-line-soft bg-cream/96 shadow-[0_10px_28px_oklch(0.24_0.02_155_/_0.06)] backdrop-blur-sm">
-        <div className="flex items-center justify-between px-5 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3">
+      <header className="customer-header sticky top-0 z-30 border-b border-line-soft bg-cream/96 shadow-[0_10px_28px_oklch(0.24_0.02_155_/_0.06)] backdrop-blur-sm">
+        <div className="customer-header-row flex items-center justify-between px-5 pb-3">
           <div>
             <p className="font-display text-xl leading-tight text-pitch">
               {lang === "ne" ? db.settings.cafeNameNe : db.settings.cafeName}
@@ -190,16 +228,15 @@ export default function MenuApp({ tableId }: { tableId: string }) {
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => {
-                const next = dark ? "light" : "dark";
-                setThemeOverride(next);
-                writeStoredString("local", THEME_KEY, next);
-              }}
+              onClick={toggleTheme}
               className="pressable flex h-11 min-w-11 items-center justify-center rounded-ctl border border-line bg-surface px-3 text-sm font-bold text-ink-soft hover:border-pitch-bright/50 hover:text-ink"
               aria-label={themeAction}
               title={themeAction}
             >
-              {dark ? <Sun size={18} aria-hidden="true" /> : <Moon size={18} aria-hidden="true" />}
+              <span className="customer-theme-icon relative grid size-[18px] place-items-center" data-interacted={themeOverride !== null} aria-hidden="true">
+                <Sun size={18} className="customer-theme-sun col-start-1 row-start-1" />
+                <Moon size={18} className="customer-theme-moon col-start-1 row-start-1" />
+              </span>
             </button>
             <button
               type="button"
@@ -264,7 +301,7 @@ export default function MenuApp({ tableId }: { tableId: string }) {
       {!searching && (
       <>
       <section className="px-5 pt-5" aria-label="Featured menu">
-        <div className="relative min-h-56 overflow-hidden rounded-[28px] bg-scrim text-photo-ink shadow-[0_20px_40px_oklch(0.24_0.02_155_/_0.18)]">
+        <div className="customer-photo-hero relative min-h-56 overflow-hidden rounded-[28px] bg-scrim text-photo-ink shadow-[0_20px_40px_oklch(0.24_0.02_155_/_0.18)]">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={heroPhoto}
@@ -274,14 +311,14 @@ export default function MenuApp({ tableId }: { tableId: string }) {
             height={620}
             loading="eager"
           />
-          <div className="absolute inset-0 bg-[linear-gradient(180deg,oklch(0.18_0.05_148_/_0.10),oklch(0.18_0.05_148_/_0.78))]" />
-          <div className="relative flex min-h-56 flex-col justify-between p-5">
+          <div className="customer-hero-shade absolute inset-0 bg-[linear-gradient(180deg,oklch(0.18_0.05_148_/_0.10),oklch(0.18_0.05_148_/_0.78))]" />
+          <div className="customer-hero-content relative flex min-h-56 flex-col justify-between p-5">
             <div className="flex items-start justify-between gap-3">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-cream/92 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-pitch">
+              <span className="customer-hero-eyebrow inline-flex items-center gap-1.5 rounded-full bg-cream/92 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-pitch">
                 <Sparkles size={13} />
                 {lang === "ne" ? "आजको रोजाइ" : "Today at Strike"}
               </span>
-              <span className="rounded-full bg-scrim/70 px-3 py-1.5 text-xs font-bold text-photo-ink">
+              <span className="customer-hero-table rounded-full bg-scrim/70 px-3 py-1.5 text-xs font-bold text-photo-ink">
                 {t("table")} {table?.label ?? "..."}
               </span>
             </div>
@@ -290,11 +327,11 @@ export default function MenuApp({ tableId }: { tableId: string }) {
                 {lang === "ne" ? "खेलपछि तातो खाना" : "Hot food after the match"}
               </h1>
               <div className="mt-4 flex flex-wrap gap-2">
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-cream/92 px-3 py-1.5 text-xs font-bold text-pitch">
+                <span className="customer-hero-hours inline-flex items-center gap-1.5 rounded-full bg-cream/92 px-3 py-1.5 text-xs font-bold text-pitch">
                   <Clock3 size={13} />
                   {db.settings.hours}
                 </span>
-                <span className="rounded-full bg-pitch-bright px-3 py-1.5 text-xs font-bold text-cream">
+                <span className="customer-hero-kitchen rounded-full bg-pitch-bright px-3 py-1.5 text-xs font-bold text-cream">
                   {lang === "ne" ? "किचनमा सिधै अर्डर" : "Sent straight to kitchen"}
                 </span>
               </div>
@@ -385,7 +422,7 @@ export default function MenuApp({ tableId }: { tableId: string }) {
                       />
                     )}
                     {save > 0 && (
-                      <span className="absolute left-2.5 top-2.5 rounded-full bg-pitch-bright px-2.5 py-1 text-xs font-bold text-cream shadow-lift">
+                      <span className="customer-deal-badge absolute left-2.5 top-2.5 rounded-full bg-pitch-bright px-2.5 py-1 text-xs font-bold text-cream shadow-lift">
                         {t("comboSave")} {npr(save)}
                       </span>
                     )}
@@ -409,7 +446,7 @@ export default function MenuApp({ tableId }: { tableId: string }) {
                         type="button"
                         onClick={() => addCombo(combo)}
                         aria-label={`${t("addToOrder")} ${combo.name}`}
-                        className="pressable flex h-9 items-center gap-1 rounded-ctl bg-pitch px-3 text-sm font-bold text-cream hover:bg-pitch-deep"
+                        className="customer-action pressable flex h-9 items-center gap-1 rounded-ctl bg-pitch px-3 text-sm font-bold text-cream hover:bg-pitch-deep"
                       >
                         <Plus size={15} /> {t("addToOrder")}
                       </button>
@@ -532,7 +569,7 @@ export default function MenuApp({ tableId }: { tableId: string }) {
           <button
             type="button"
             onClick={() => setCartOpen(true)}
-            className="pressable tap-bloom flex w-full items-center justify-between rounded-[22px] bg-pitch px-5 py-4 text-cream shadow-[0_16px_34px_oklch(0.24_0.02_155_/_0.24)] hover:bg-pitch-deep"
+            className="customer-action pressable tap-bloom flex w-full items-center justify-between rounded-[22px] bg-pitch px-5 py-4 text-cream shadow-[0_16px_34px_oklch(0.24_0.02_155_/_0.24)] hover:bg-pitch-deep"
           >
             <span className="flex items-center gap-2.5 font-bold">
               <ShoppingBag size={20} />
@@ -605,7 +642,7 @@ function CatChip({ active, onClick, label }: { active: boolean; onClick: () => v
       onClick={onClick}
       aria-pressed={active}
       className={`pressable h-10 shrink-0 rounded-full px-4 text-sm font-bold ${
-        active ? "bg-pitch text-cream shadow-lift" : "border border-line bg-surface text-ink-soft hover:border-pitch-bright/45 hover:text-ink"
+        active ? "customer-chip bg-pitch text-cream shadow-lift" : "border border-line bg-surface text-ink-soft hover:border-pitch-bright/45 hover:text-ink"
       }`}
     >
       {label}
@@ -648,8 +685,8 @@ function CategoryCard({
         loading="lazy"
         className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 ease-[var(--ease-smooth)] group-hover:scale-[1.04]"
       />
-      <div className={`absolute inset-0 ${tone} opacity-45 mix-blend-multiply`} />
-      <div className="absolute inset-0 bg-[linear-gradient(180deg,oklch(0.18_0.05_148_/_0.04),oklch(0.18_0.05_148_/_0.78))]" />
+      <div className={`customer-category-tint absolute inset-0 ${tone} opacity-45 mix-blend-multiply`} />
+      <div className="customer-category-shade absolute inset-0 bg-[linear-gradient(180deg,oklch(0.18_0.05_148_/_0.04),oklch(0.18_0.05_148_/_0.78))]" />
       <div className="relative flex h-full flex-col justify-between p-3 text-photo-ink">
         <span className="self-start rounded-full bg-surface/92 px-2 py-0.5 text-[11px] font-bold text-pitch">
           {count}

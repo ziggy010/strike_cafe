@@ -127,7 +127,7 @@ export function Sheet({
       />
       <div
         ref={ref}
-        className={`relative w-full max-w-md overflow-hidden rounded-t-[24px] bg-surface shadow-sheet ${closing ? "sheet-panel-out" : "sheet-panel-in"}`}
+        className={`sheet-panel relative w-full max-w-md overflow-hidden rounded-t-[24px] bg-surface shadow-sheet ${closing ? "sheet-panel-out" : "sheet-panel-in"}`}
         style={{ maxHeight: "88dvh" }}
       >
         {title ? (

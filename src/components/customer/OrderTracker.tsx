@@ -187,7 +187,7 @@ function Feedback({ order }: { order: Order }) {
           <button
             type="button"
             onClick={() => getStore().submitFeedback(order.id, rating, comment.trim())}
-            className="rounded-ctl bg-pitch px-4 text-sm font-bold text-cream"
+            className="customer-action pressable rounded-ctl bg-pitch px-4 text-sm font-bold text-cream"
           >
             {t("send")}
           </button>

@@ -88,7 +88,7 @@ export function ItemSheet({
                 note: note.trim(),
               })
             }
-            className="pressable tap-bloom price flex-1 rounded-ctl bg-pitch px-5 py-3.5 text-base font-bold text-cream hover:bg-pitch-deep"
+            className="customer-action pressable tap-bloom price flex-1 rounded-ctl bg-pitch px-5 py-3.5 text-base font-bold text-cream hover:bg-pitch-deep"
           >
             {t("addToOrder")} · {npr(item.price * qty)}
           </button>
@@ -286,7 +286,7 @@ export function CartSheet({
           <button
             type="button"
             onClick={onSubmit}
-            className="pressable tap-bloom mt-4 mb-2 w-full rounded-ctl bg-pitch py-4 text-base font-bold text-cream hover:bg-pitch-deep"
+            className="customer-action pressable tap-bloom mt-4 mb-2 w-full rounded-ctl bg-pitch py-4 text-base font-bold text-cream hover:bg-pitch-deep"
           >
             {appending ? t("addMore") : t("placeOrder")}
           </button>
