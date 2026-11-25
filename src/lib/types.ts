@@ -31,10 +31,13 @@ export interface MenuItem {
   availableWindow: { from: string; to: string } | null;
 }
 
+export type TableFloor = "ground" | "upstairs";
+
 export interface CafeTable {
   id: string;
   label: string; // "T1", "Court-side 2"
   active: boolean;
+  floor?: TableFloor; // older tables default to the ground floor
 }
 
 export interface OrderLine {

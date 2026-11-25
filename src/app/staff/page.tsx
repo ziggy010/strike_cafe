@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { BellRing, Check, ChevronRight, Clock3, QrCode, UserCheck } from "lucide-react";
 import { useStaff } from "@/components/staff/StaffShell";
 import { StatusBadge } from "@/components/ui";
@@ -8,6 +10,7 @@ import { getStore } from "@/lib/store";
 import { useDB } from "@/lib/useStore";
 import { clockTime, npr, timeAgo } from "@/lib/format";
 import { linesSubtotal, orderTotal } from "@/lib/orders";
+import { tableDisplay } from "@/lib/tables";
 import type { Order, OrderStatus, WaiterCall } from "@/lib/types";
 import { isOpen } from "@/lib/types";
 
@@ -26,6 +29,19 @@ const STATUS_LABEL: Record<OrderStatus, string> = {
 };
 
 export default function OrdersPage() {
+  return (
+    <Suspense fallback={<p className="p-6 text-ink-soft">Loading orders...</p>}>
+      <OrdersRoute />
+    </Suspense>
+  );
+}
+
+function OrdersRoute() {
+  const tableId = useSearchParams().get("table");
+  return <Orders key={tableId} tableId={tableId} />;
+}
+
+function Orders({ tableId }: { tableId: string | null }) {
   const db = useDB();
   const user = useStaff();
   const [tab, setTab] = useState<"open" | "closed">("open");
@@ -39,27 +55,28 @@ export default function OrdersPage() {
   const calls = useMemo(
     () =>
       db.calls
-        .filter((c) => !c.resolvedAt)
+        .filter((c) => !c.resolvedAt && (!tableId || c.tableId === tableId))
         .sort((a, b) => Number(!!a.acceptedAt) - Number(!!b.acceptedAt) || a.createdAt - b.createdAt),
-    [db.calls],
+    [db.calls, tableId],
   );
   const tableLabel = (id: string) => db.tables.find((t) => t.id === id)?.label ?? "?";
+  const scopedTable = db.tables.find((table) => table.id === tableId);
   const staffName = (id: string | null) => (id ? db.staff.find((s) => s.id === id)?.name ?? "Staff" : "Staff");
 
   const open = useMemo(
     () =>
       db.orders
-        .filter(isOpen)
+        .filter((order) => isOpen(order) && (!tableId || order.tableId === tableId))
         .sort((a, b) => a.placedAt - b.placedAt),
-    [db.orders],
+    [db.orders, tableId],
   );
   const closed = useMemo(
     () =>
       db.orders
-        .filter((o) => !isOpen(o))
+        .filter((o) => !isOpen(o) && (!tableId || o.tableId === tableId))
         .sort((a, b) => b.updatedAt - a.updatedAt)
         .slice(0, 30),
-    [db.orders],
+    [db.orders, tableId],
   );
 
   const orders = tab === "open" ? open : closed;
@@ -84,6 +101,12 @@ export default function OrdersPage() {
           ))}
         </div>
       </div>
+      {tableId && (
+        <p className="mt-2 flex flex-wrap gap-x-3 text-sm font-bold">
+          <Link href={{ pathname: "/staff/tables", query: { table: tableId } }} className="text-pitch underline underline-offset-4">Back to tables</Link>
+          <span>{scopedTable ? tableDisplay(scopedTable) : "Unknown table"}</span>
+        </p>
+      )}
 
       {/* Waiter calls */}
       {calls.length > 0 && (

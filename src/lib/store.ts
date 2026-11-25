@@ -17,12 +17,14 @@ import type {
   Promo,
   Settings,
   StaffUser,
+  TableFloor,
   CafeTable,
   Category,
 } from "./types";
 import { isOpen } from "./types";
 import { linesSubtotal, orderGrandTotal, promoDiscount } from "./orders";
 import { seedDB } from "./seed";
+import { isUnpaidServed } from "./tables";
 
 const LS_KEY = "strike-yard-db-v1";
 const ARCHIVE_KEY = "strike-yard-archive-v1";
@@ -165,7 +167,7 @@ class Store {
     const seed = seedDB();
     if (!db.categories?.length) db.categories = seed.categories;
     if (!db.items?.length) db.items = seed.items;
-    if (!db.tables?.length) db.tables = seed.tables;
+    if (!Array.isArray(db.tables)) db.tables = seed.tables;
     if (!db.staff?.length) db.staff = seed.staff;
     if (!db.inventory?.length) db.inventory = seed.inventory;
     if (!db.settings) db.settings = seed.settings;
@@ -240,7 +242,7 @@ class Store {
   /** Remove closed orders from before today out of the live DB and return them. */
   private extractArchivable(db: DB): Order[] {
     const cutoff = startOfToday();
-    const archivable = db.orders.filter((o) => !isOpen(o) && o.placedAt < cutoff);
+    const archivable = db.orders.filter((o) => !isOpen(o) && !isUnpaidServed(o) && (o.paidAt ?? o.placedAt) < cutoff);
     if (archivable.length > 0) {
       const tombstones = new Map(db.orderTombstones.map((tombstone) => [tombstone.id, tombstone]));
       for (const order of archivable) {
@@ -858,8 +860,8 @@ class Store {
 
   // ---- Tables ----
 
-  addTable(label: string): void {
-    this.mutate((db) => db.tables.push({ id: uid(), label, active: true }));
+  addTable(label: string, floor: TableFloor = "ground"): void {
+    this.mutate((db) => db.tables.push({ id: uid(), label, floor, active: true }));
   }
 
   updateTable(id: string, patch: Partial<CafeTable>): void {
@@ -871,6 +873,8 @@ class Store {
 
   removeTable(id: string): void {
     this.mutate((db) => {
+      if (db.orders.some((o) => o.tableId === id && (isOpen(o) || isUnpaidServed(o)))) return;
+      if (db.calls.some((c) => c.tableId === id && !c.resolvedAt)) return;
       db.tables = db.tables.filter((t) => t.id !== id);
     });
   }

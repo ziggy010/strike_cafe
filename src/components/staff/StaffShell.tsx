@@ -43,7 +43,7 @@ const NAV: { href: string; label: string; icon: typeof ChefHat; roles: Role[] }[
   { href: "/staff/reports", label: "Ledger", icon: BarChart3, roles: ["admin"] },
   { href: "/staff/menu", label: "Menu", icon: UtensilsCrossed, roles: ["admin"] },
   { href: "/staff/deals", label: "Deals", icon: BadgePercent, roles: ["admin"] },
-  { href: "/staff/tables", label: "Tables", icon: QrCode, roles: ["admin", "waiter"] },
+  { href: "/staff/tables", label: "Tables", icon: QrCode, roles: ["admin", "waiter", "counter"] },
   { href: "/staff/inventory", label: "Inventory", icon: Boxes, roles: ["admin"] },
   { href: "/staff/settings", label: "Settings", icon: SettingsIcon, roles: ["admin"] },
 ];
@@ -92,7 +92,7 @@ export default function StaffShell({ children }: { children: React.ReactNode }) 
         onLogin={(u) => {
           writeStoredString("session", SESSION_KEY, u.id);
           if (u.role === "kitchen") router.push("/staff/kitchen");
-          if (u.role === "counter") router.push("/staff/billing");
+          if (u.role === "counter" && pathname !== "/staff/billing") router.push("/staff/tables");
         }}
       />
     );

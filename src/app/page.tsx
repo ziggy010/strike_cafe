@@ -1,5 +1,7 @@
 "use client";
 
+import { tableMenuPath } from "@/lib/tables";
+
 import Link from "next/link";
 import { QrCode, UtensilsCrossed } from "lucide-react";
 import { useDB, useHydrated } from "@/lib/useStore";
@@ -39,7 +41,7 @@ export default function Home() {
               .map((t) => (
                 <Link
                   key={t.id}
-                  href={`/t/${t.id}`}
+                  href={tableMenuPath(t.id)}
                   className="flex h-11 items-center rounded-ctl border border-line bg-surface px-4 text-sm font-bold text-ink transition-colors hover:border-pitch-bright"
                 >
                   {t.label}

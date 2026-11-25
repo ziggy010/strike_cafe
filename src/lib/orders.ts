@@ -13,12 +13,15 @@ export function orderTotal(order: Order): number {
   );
 }
 
-/** Final amount collected after configured service charge and VAT. */
-export function orderGrandTotal(order: Order, settings: Pick<Settings, "serviceChargePercent" | "vatPercent">): number {
-  const subtotal = orderTotal(order);
+export function billCharges(subtotal: number, settings: Pick<Settings, "serviceChargePercent" | "vatPercent">) {
   const service = Math.round((subtotal * settings.serviceChargePercent) / 100);
   const vat = Math.round((subtotal * settings.vatPercent) / 100);
-  return subtotal + service + vat;
+  return { service, vat, total: subtotal + service + vat };
+}
+
+/** Final amount collected after configured service charge and VAT. */
+export function orderGrandTotal(order: Order, settings: Pick<Settings, "serviceChargePercent" | "vatPercent">): number {
+  return billCharges(orderTotal(order), settings).total;
 }
 
 export function promoExpired(promo: Promo, now: number = Date.now()): boolean {

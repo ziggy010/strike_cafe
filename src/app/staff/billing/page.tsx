@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import QRCode from "qrcode";
 import { BadgePercent, Banknote, CheckCircle2, Clock3, Copy, CreditCard, Printer, QrCode, ReceiptText, Search, Share2, Trash2 } from "lucide-react";
 import { useStaff } from "@/components/staff/StaffShell";
@@ -8,8 +10,9 @@ import { StatusBadge } from "@/components/ui";
 import { getStore } from "@/lib/store";
 import { useDB } from "@/lib/useStore";
 import { clockTime, npr, timeAgo } from "@/lib/format";
-import { linesSubtotal, orderTotal } from "@/lib/orders";
+import { billCharges, linesSubtotal, orderTotal } from "@/lib/orders";
 import { buildDynamicNepalQr } from "@/lib/nepalQr";
+import { floorLabel, tableDisplay } from "@/lib/tables";
 import type { Order, OrderStatus, Settings } from "@/lib/types";
 
 type BillTab = "unpaid" | "paid";
@@ -17,6 +20,7 @@ type BillGroup = {
   id: string;
   tableId: string;
   tableLabel: string;
+  floor: string;
   orders: Order[];
 };
 
@@ -47,9 +51,7 @@ function buildReceiptText(group: BillGroup, settings: Settings): string {
   const promoDiscount = group.orders.reduce((sum, order) => sum + (order.discount?.amount ?? 0), 0);
   const counterDiscount = group.orders.reduce((sum, order) => sum + (order.counterDiscount?.amount ?? 0), 0);
   const subtotal = groupTotal(group);
-  const service = Math.round((subtotal * settings.serviceChargePercent) / 100);
-  const vat = Math.round((subtotal * settings.vatPercent) / 100);
-  const total = subtotal + service + vat;
+  const { service, vat, total } = billCharges(subtotal, settings);
   const allPaid = group.orders.every((order) => order.paid);
   const method = allPaid ? paymentLabel(group.orders.find((order) => order.paymentMethod)?.paymentMethod ?? null) : "Unpaid";
   const lines = group.orders.flatMap((order) =>
@@ -58,7 +60,7 @@ function buildReceiptText(group: BillGroup, settings: Settings): string {
 
   return [
     settings.cafeName,
-    `Table ${group.tableLabel}`,
+    `${group.floor} / ${group.tableLabel}`,
     `Orders: ${group.orders.map((order) => order.code).join(", ")}`,
     "",
     ...lines,
@@ -79,17 +81,32 @@ function buildReceiptText(group: BillGroup, settings: Settings): string {
 }
 
 export default function BillingPage() {
+  return (
+    <Suspense fallback={<p className="p-6 text-ink-soft">Loading billing...</p>}>
+      <BillingRoute />
+    </Suspense>
+  );
+}
+
+function BillingRoute() {
+  const tableId = useSearchParams().get("table");
+  return <Billing key={tableId} tableId={tableId} />;
+}
+
+function Billing({ tableId }: { tableId: string | null }) {
   const db = useDB();
+  const { role } = useStaff();
   const [tab, setTab] = useState<BillTab>("unpaid");
   const [query, setQuery] = useState("");
   const tableLabel = (id: string) => db.tables.find((t) => t.id === id)?.label ?? "?";
+  const scopedTable = db.tables.find((table) => table.id === tableId);
 
   const billable = useMemo(
     () =>
       db.orders
-        .filter((order) => order.status === "served")
+        .filter((order) => order.status === "served" && (!tableId || order.tableId === tableId))
         .sort((a, b) => b.updatedAt - a.updatedAt),
-    [db.orders],
+    [db.orders, tableId],
   );
   const unpaid = billable.filter((order) => !order.paid);
   const paid = billable.filter((order) => order.paid).slice(0, 40);
@@ -105,6 +122,7 @@ export default function BillingPage() {
           id: `${tab}-${order.tableId}`,
           tableId: order.tableId,
           tableLabel: tableLabel(order.tableId),
+          floor: floorLabel(db.tables.find((table) => table.id === order.tableId)?.floor),
           orders: [order],
         });
       }
@@ -125,12 +143,20 @@ export default function BillingPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = visible.find((group) => group.id === selectedId) ?? visible[0] ?? null;
 
+  if (role !== "admin" && role !== "counter") return <p className="p-6">Billing is for owner and counter staff.</p>;
+
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-6 lg:px-8">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="font-display text-2xl text-pitch">Billing</h1>
           <p className="mt-1 text-sm text-ink-soft">Bills appear after food is marked served.</p>
+          {tableId && (
+            <p className="mt-2 flex flex-wrap gap-x-3 text-sm font-bold">
+              <Link href={{ pathname: "/staff/tables", query: { table: tableId } }} className="text-pitch underline underline-offset-4">Back to tables</Link>
+              <span>{scopedTable ? tableDisplay(scopedTable) : "Unknown table"}</span>
+            </p>
+          )}
         </div>
         <div className="flex rounded-ctl border border-line bg-surface p-0.5 text-sm font-bold">
           {(
@@ -190,7 +216,7 @@ export default function BillingPage() {
                     <span className="flex items-start justify-between gap-3">
                       <span>
                         <span className="font-bold">
-                          Table {group.tableLabel} · {group.orders.length} order{group.orders.length === 1 ? "" : "s"}
+                          {group.floor} / {group.tableLabel} · {group.orders.length} order{group.orders.length === 1 ? "" : "s"}
                         </span>
                         <span className="mt-1 flex flex-wrap items-center gap-1.5">
                           <span className="rounded-full bg-cream px-2 py-0.5 text-xs font-bold text-ink-soft">
@@ -201,7 +227,7 @@ export default function BillingPage() {
                           </span>
                         </span>
                       </span>
-                      <span className="price shrink-0 font-display text-lg text-pitch">{npr(groupTotal(group))}</span>
+                      <span className="price shrink-0 font-display text-lg text-pitch">{npr(billCharges(groupTotal(group), db.settings).total)}</span>
                     </span>
                     <span className="mt-2 flex items-center gap-1.5 text-xs text-ink-faint">
                       <Clock3 size={13} />
@@ -216,7 +242,7 @@ export default function BillingPage() {
 
         <section className="min-w-0">
           {selected ? (
-            <BillDetail group={selected} />
+            <BillDetail key={selected.id} group={selected} />
           ) : (
             <div className="rounded-card border border-line bg-surface p-8 text-center text-ink-faint">
               Select an order to show the bill.
@@ -295,9 +321,7 @@ function BillDetail({ group }: { group: BillGroup }) {
   const promoDiscount = group.orders.reduce((sum, order) => sum + (order.discount?.amount ?? 0), 0);
   const counterDiscount = group.orders.reduce((sum, order) => sum + (order.counterDiscount?.amount ?? 0), 0);
   const subtotal = groupTotal(group);
-  const vat = Math.round((subtotal * db.settings.vatPercent) / 100);
-  const service = Math.round((subtotal * db.settings.serviceChargePercent) / 100);
-  const total = subtotal + vat + service;
+  const { vat, service, total } = billCharges(subtotal, db.settings);
   const itemCount = group.orders.reduce((sum, order) => sum + order.lines.reduce((lineSum, line) => lineSum + line.qty, 0), 0);
   const allPaid = group.orders.every((order) => order.paid);
   const firstPlacedAt = Math.min(...group.orders.map((order) => order.placedAt));
@@ -413,6 +437,7 @@ function BillDetail({ group }: { group: BillGroup }) {
           <div>
             <p className="text-xs font-bold uppercase tracking-widest opacity-75">{db.settings.cafeName} Bill</p>
             <h2 className="mt-1 font-display text-3xl leading-none">Table {group.tableLabel}</h2>
+            <p className="mt-1 text-sm text-cream/80">{group.floor}</p>
             <p className="mt-2 text-sm opacity-85">
               {group.orders.map((order) => order.code).join(", ")} · {clockTime(firstPlacedAt)} · {itemCount} item{itemCount === 1 ? "" : "s"}
             </p>
