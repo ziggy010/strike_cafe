@@ -1,39 +1,4 @@
-"use client";
-
-import { useCallback, useSyncExternalStore } from "react";
 import type { Lang } from "./types";
-
-const LS_LANG = "strike-yard-lang";
-
-// Language lives in a tiny module-level store so every component that calls
-// useLang re-renders together when the toggle flips.
-let currentLang: Lang | null = null;
-const langListeners = new Set<() => void>();
-
-function readLang(): Lang {
-  if (currentLang === null) {
-    try {
-      const saved = window.localStorage.getItem(LS_LANG);
-      currentLang = saved === "ne" ? "ne" : "en";
-    } catch {
-      currentLang = "en";
-    }
-  }
-  return currentLang;
-}
-
-function writeLang(l: Lang): void {
-  currentLang = l;
-  try {
-    window.localStorage.setItem(LS_LANG, l);
-  } catch {}
-  langListeners.forEach((fn) => fn());
-}
-
-function subscribeLang(fn: () => void): () => void {
-  langListeners.add(fn);
-  return () => langListeners.delete(fn);
-}
 
 const dict = {
   menu: { en: "Menu", ne: "मेनु" },
@@ -106,11 +71,10 @@ const dict = {
 
 export type TKey = keyof typeof dict;
 
-export function useLang(): { lang: Lang; setLang: (l: Lang) => void; t: (k: TKey) => string } {
-  const lang = useSyncExternalStore(subscribeLang, readLang, () => "en" as Lang);
-  const t = useCallback((k: TKey) => dict[k][lang], [lang]);
-  return { lang, setLang: writeLang, t };
-}
+export const customerCopy: { lang: Lang; t: (key: TKey) => string } = {
+  lang: "en",
+  t: (key) => dict[key].en,
+};
 
 /** Pick the localized field from a bilingual record, falling back to English. */
 export function loc(lang: Lang, en: string, ne: string): string {

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Check, ChefHat, HandPlatter, Inbox, Star } from "lucide-react";
 import { getStore } from "@/lib/store";
-import { useLang } from "@/lib/i18n";
+import { customerCopy } from "@/lib/i18n";
 import { npr } from "@/lib/format";
 import { orderTotal } from "@/lib/orders";
 import type { Order } from "@/lib/types";
@@ -24,7 +24,7 @@ export function OrderTracker({
   highlight: boolean;
   onNewOrder: () => void;
 }) {
-  const { t } = useLang();
+  const { t } = customerCopy;
 
   const stepIndex =
     order.status === "received" ? 0 : order.status === "preparing" ? 1 : order.status === "ready" ? 2 : 3;
@@ -144,7 +144,7 @@ function NewOrderButton({ onClick, label }: { onClick: () => void; label: string
 }
 
 function Feedback({ order }: { order: Order }) {
-  const { t } = useLang();
+  const { t } = customerCopy;
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState("");
 

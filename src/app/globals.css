@@ -18,6 +18,8 @@
   --color-saffron-soft: oklch(0.96 0.04 85);
   --color-line: oklch(0.9 0.012 120);
   --color-line-soft: oklch(0.93 0.01 115);
+  --color-photo-ink: oklch(0.97 0.008 95);
+  --color-scrim: oklch(0.24 0.02 155);
 
   /* Kitchen display (dark) */
   --color-kds-bg: oklch(0.17 0.015 155);
@@ -97,6 +99,32 @@ body::before {
   background:
     radial-gradient(circle at 18% 0%, oklch(0.9 0.08 146 / 0.38), transparent 28rem),
     linear-gradient(145deg, oklch(0.97 0.008 95), oklch(0.94 0.028 126));
+}
+
+:root:has([data-customer-theme="dark"]) {
+  color-scheme: dark;
+  --color-pitch: oklch(0.82 0.13 146);
+  --color-pitch-deep: oklch(0.88 0.105 146);
+  --color-pitch-bright: oklch(0.75 0.145 146);
+  --color-pitch-soft: oklch(0.30 0.044 150);
+  --color-cream: oklch(0.19 0.018 150);
+  --color-surface: oklch(0.24 0.021 150);
+  --color-ink: oklch(0.95 0.011 100);
+  --color-ink-soft: oklch(0.81 0.024 125);
+  --color-ink-faint: oklch(0.72 0.022 130);
+  --color-terracotta: oklch(0.79 0.11 39);
+  --color-terracotta-soft: oklch(0.31 0.044 37);
+  --color-saffron: oklch(0.83 0.126 75);
+  --color-saffron-deep: oklch(0.81 0.11 78);
+  --color-saffron-soft: oklch(0.31 0.042 74);
+  --color-line: oklch(0.40 0.027 145);
+  --color-line-soft: oklch(0.32 0.022 145);
+  --color-scrim: oklch(0.10 0.014 150);
+  --shadow-sheet: 0 -8px 32px oklch(0.10 0.014 150 / 0.46);
+}
+
+:root:has([data-customer-theme="dark"]) body::before {
+  background: radial-gradient(circle at 18% 0%, oklch(0.33 0.063 150 / 0.48), transparent 30rem);
 }
 
 h1, h2, h3, .font-display {

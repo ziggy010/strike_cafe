@@ -123,7 +123,7 @@ export function Sheet({
         type="button"
         aria-label="Close"
         onClick={closeWithMotion}
-        className={`absolute inset-0 bg-ink/45 transition-colors hover:bg-ink/50 ${closing ? "sheet-scrim-out" : "sheet-scrim-in"}`}
+        className={`absolute inset-0 bg-scrim/45 transition-colors hover:bg-scrim/50 ${closing ? "sheet-scrim-out" : "sheet-scrim-in"}`}
       />
       <div
         ref={ref}

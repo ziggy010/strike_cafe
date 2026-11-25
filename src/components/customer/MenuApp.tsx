@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Bell, BellRing, Clock3, Plus, Search, ShoppingBag, Sparkles, X } from "lucide-react";
+import { Bell, BellRing, Clock3, Moon, Plus, Search, ShoppingBag, Sparkles, Sun, X } from "lucide-react";
 import type { CartLine } from "./cart";
 import { ItemSheet, CartSheet } from "./Sheets";
 import { OrderTracker } from "./OrderTracker";
@@ -9,12 +9,13 @@ import { DietMark, SpiceLevel, StockBadge } from "@/components/ui";
 import { getStore } from "@/lib/store";
 import { useDB, useHydrated, useStoredString, writeStoredString } from "@/lib/useStore";
 import { assetPath } from "@/lib/assets";
-import { loc, useLang } from "@/lib/i18n";
+import { customerCopy, loc } from "@/lib/i18n";
 import { inWindow, npr } from "@/lib/format";
 import type { Combo, MenuItem } from "@/lib/types";
 import { isOpen } from "@/lib/types";
 
 const orderKey = (tableId: string) => `strike-yard-order-${tableId}`;
+const THEME_KEY = "strike-yard-customer-theme";
 const heroPhoto = assetPath("/food/burger.webp");
 const CATEGORY_META: Record<string, { photo: string; tone: string; kicker: string }> = {
   "cat-coffee": { photo: assetPath("/food/latte.webp"), tone: "bg-pitch", kicker: "Fresh pulls" },
@@ -27,7 +28,11 @@ const CATEGORY_META: Record<string, { photo: string; tone: string; kicker: strin
 export default function MenuApp({ tableId }: { tableId: string }) {
   const db = useDB();
   const hydrated = useHydrated();
-  const { lang, setLang, t } = useLang();
+  const { lang, t } = customerCopy;
+  const savedTheme = useStoredString("local", THEME_KEY);
+  const [themeOverride, setThemeOverride] = useState<"light" | "dark" | null>(null);
+  const dark = (themeOverride ?? savedTheme) === "dark";
+  const themeAction = dark ? "Switch to light mode" : "Switch to dark mode";
 
   const table = db.tables.find((x) => x.id === tableId);
 
@@ -162,7 +167,7 @@ export default function MenuApp({ tableId }: { tableId: string }) {
 
   if (hydrated && !table) {
     return (
-      <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col items-center justify-center gap-3 px-8 text-center">
+      <main data-customer-theme={dark ? "dark" : "light"} className="mx-auto flex min-h-dvh w-full max-w-md flex-col items-center justify-center gap-3 px-8 text-center">
         <h1 className="text-2xl">Strike Yard</h1>
         <p className="text-ink-soft">{t("scanHint")}</p>
       </main>
@@ -170,7 +175,7 @@ export default function MenuApp({ tableId }: { tableId: string }) {
   }
 
   return (
-    <div className="mx-auto w-full max-w-md pb-28">
+    <div data-customer-theme={dark ? "dark" : "light"} className="mx-auto w-full max-w-md pb-28">
       {/* Header */}
       <header className="sticky top-0 z-30 border-b border-line-soft bg-cream/96 shadow-[0_10px_28px_oklch(0.24_0.02_155_/_0.06)] backdrop-blur-sm">
         <div className="flex items-center justify-between px-5 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3">
@@ -185,11 +190,16 @@ export default function MenuApp({ tableId }: { tableId: string }) {
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setLang(lang === "en" ? "ne" : "en")}
+              onClick={() => {
+                const next = dark ? "light" : "dark";
+                setThemeOverride(next);
+                writeStoredString("local", THEME_KEY, next);
+              }}
               className="pressable flex h-11 min-w-11 items-center justify-center rounded-ctl border border-line bg-surface px-3 text-sm font-bold text-ink-soft hover:border-pitch-bright/50 hover:text-ink"
-              aria-label={lang === "en" ? "नेपालीमा हेर्नुहोस्" : "Switch to English"}
+              aria-label={themeAction}
+              title={themeAction}
             >
-              {lang === "en" ? "ने" : "EN"}
+              {dark ? <Sun size={18} aria-hidden="true" /> : <Moon size={18} aria-hidden="true" />}
             </button>
             <button
               type="button"
@@ -254,7 +264,7 @@ export default function MenuApp({ tableId }: { tableId: string }) {
       {!searching && (
       <>
       <section className="px-5 pt-5" aria-label="Featured menu">
-        <div className="relative min-h-56 overflow-hidden rounded-[28px] bg-pitch text-cream shadow-[0_20px_40px_oklch(0.24_0.02_155_/_0.18)]">
+        <div className="relative min-h-56 overflow-hidden rounded-[28px] bg-scrim text-photo-ink shadow-[0_20px_40px_oklch(0.24_0.02_155_/_0.18)]">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={heroPhoto}
@@ -271,12 +281,12 @@ export default function MenuApp({ tableId }: { tableId: string }) {
                 <Sparkles size={13} />
                 {lang === "ne" ? "आजको रोजाइ" : "Today at Strike"}
               </span>
-              <span className="rounded-full bg-ink/45 px-3 py-1.5 text-xs font-bold text-cream">
+              <span className="rounded-full bg-scrim/70 px-3 py-1.5 text-xs font-bold text-photo-ink">
                 {t("table")} {table?.label ?? "..."}
               </span>
             </div>
             <div>
-              <h1 className="max-w-[13ch] font-display text-[2.35rem] leading-[0.98] text-cream">
+              <h1 className="max-w-[13ch] font-display text-[2.35rem] leading-[0.98] text-photo-ink">
                 {lang === "ne" ? "खेलपछि तातो खाना" : "Hot food after the match"}
               </h1>
               <div className="mt-4 flex flex-wrap gap-2">
@@ -640,7 +650,7 @@ function CategoryCard({
       />
       <div className={`absolute inset-0 ${tone} opacity-45 mix-blend-multiply`} />
       <div className="absolute inset-0 bg-[linear-gradient(180deg,oklch(0.18_0.05_148_/_0.04),oklch(0.18_0.05_148_/_0.78))]" />
-      <div className="relative flex h-full flex-col justify-between p-3 text-cream">
+      <div className="relative flex h-full flex-col justify-between p-3 text-photo-ink">
         <span className="self-start rounded-full bg-surface/92 px-2 py-0.5 text-[11px] font-bold text-pitch">
           {count}
         </span>
@@ -654,7 +664,7 @@ function CategoryCard({
 }
 
 function MenuCard({ item, onOpen }: { item: MenuItem; onOpen: () => void }) {
-  const { lang, t } = useLang();
+  const { lang, t } = customerCopy;
   const soldOut = item.stock === "out";
   const offHours = !inWindow(item.availableWindow);
   const disabled = soldOut || offHours;

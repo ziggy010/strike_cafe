@@ -6,7 +6,7 @@ import type { CartLine } from "./cart";
 import { DietMark, Sheet, SpiceLevel, Stepper } from "@/components/ui";
 import { getStore } from "@/lib/store";
 import { useDB } from "@/lib/useStore";
-import { loc, useLang } from "@/lib/i18n";
+import { customerCopy, loc } from "@/lib/i18n";
 import { npr } from "@/lib/format";
 import type { MenuItem } from "@/lib/types";
 
@@ -19,7 +19,7 @@ export function ItemSheet({
   onClose: () => void;
   onAdd: (line: CartLine) => void;
 }) {
-  const { lang, t } = useLang();
+  const { lang, t } = customerCopy;
   const [qty, setQty] = useState(1);
   const [note, setNote] = useState("");
 
@@ -117,7 +117,7 @@ export function CartSheet({
   promoCode: string | null;
   setPromoCode: (code: string | null) => void;
 }) {
-  const { lang, t } = useLang();
+  const { lang, t } = customerCopy;
   const db = useDB();
   const [codeInput, setCodeInput] = useState("");
   const [promoError, setPromoError] = useState<string | null>(null);
